@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-002: Async-First Architecture - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit acts as a proxy between MCP clients and servers, requiring:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-002-async-first-architecture">ADR-002: Async-First Architecture</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit acts as a proxy between MCP clients and servers, requiring:</p>
+<ol>
+<li>Concurrent handling of multiple client connections</li>
+<li>Non-blocking I/O operations for server communication</li>
+<li>Efficient resource utilization</li>
+<li>Responsive user experience</li>
+<li>Integration with Python ecosystem's async patterns</li>
+</ol>
+<p>The choice of synchronous vs asynchronous architecture will fundamentally impact performance, scalability, and development patterns throughout the codebase.</p>
+<h2 id="decision">Decision</h2>
+<p>We will implement an <strong>async-first architecture</strong> using Python's <code>asyncio</code> throughout the entire codebase:</p>
+<pre><code class="language-python"><span class="c1"># All core operations are async</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">handle_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="c1"># Validate request</span>
+    <span class="n">validated</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">validate_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+    
+    <span class="c1"># Forward to server</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">send_and_receive</span><span class="p">(</span><span class="n">validated</span><span class="p">)</span>
+    
+    <span class="c1"># Apply security filters</span>
+    <span class="n">filtered</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">filter_response</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">filtered</span>
+</code></pre>
+<h3 id="key-design-principles">Key Design Principles</h3>
+<ol>
+<li><strong>Async by Default</strong>: All I/O operations use <code>async</code>/<code>await</code></li>
+<li><strong>No Blocking Calls</strong>: Avoid any synchronous I/O in the main path</li>
+<li><strong>Concurrent Operations</strong>: Use <code>asyncio.gather()</code> for parallel tasks</li>
+<li><strong>Proper Resource Management</strong>: Use <code>async with</code> for cleanup</li>
+<li><strong>Error Propagation</strong>: Async-aware exception handling</li>
+<li><strong>Concurrent Request Handling</strong>: Support multiple simultaneous requests with proper correlation</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-synchronous-with-threading">Alternative 1: Synchronous with Threading</h3>
+<pre><code class="language-python"><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">SyncHandler</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">handle_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="k">with</span> <span class="n">ThreadPoolExecutor</span><span class="p">()</span> <span class="k">as</span> <span class="n">executor</span><span class="p">:</span>
+            <span class="n">future</span> <span class="o">=</span> <span class="n">executor</span><span class="o">.</span><span class="n">submit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">process</span><span class="p">,</span> <span class="n">request</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">future</span><span class="o">.</span><span class="n">result</span><span class="p">()</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Simpler mental model, familiar patterns</li>
+<li><strong>Cons</strong>: GIL limitations, thread overhead, complex resource management</li>
+</ul>
+<h3 id="alternative-2-mixed-syncasync-architecture">Alternative 2: Mixed Sync/Async Architecture</h3>
+<pre><code class="language-python"><span class="c1"># Sync public API with async internals</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_async_handle_request</span><span class="p">(</span><span class="n">request</span><span class="p">))</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Familiar external API</li>
+<li><strong>Cons</strong>: Inefficient event loop management, harder to compose</li>
+</ul>
+<h3 id="alternative-3-callback-based-architecture">Alternative 3: Callback-Based Architecture</h3>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">handle_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">callback</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">response</span><span class="p">:</span> <span class="n">callback</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">response</span><span class="p">)))</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: No async/await complexity</li>
+<li><strong>Cons</strong>: Callback hell, harder error handling, less readable</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>High Concurrency</strong>: Handle many simultaneous connections efficiently</li>
+<li><strong>Responsive</strong>: Non-blocking operations keep system responsive</li>
+<li><strong>Scalable</strong>: Better resource utilization than threading</li>
+<li><strong>Modern</strong>: Aligns with Python ecosystem trends</li>
+<li><strong>Testable</strong>: Easy to mock async operations for testing</li>
+<li><strong>Composable</strong>: Async functions compose naturally</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Learning Curve</strong>: Team must understand async/await patterns</li>
+<li><strong>Debugging Complexity</strong>: Async stack traces can be harder to follow</li>
+<li><strong>Dependency Constraints</strong>: Must use async-compatible libraries</li>
+<li><strong>Test Complexity</strong>: Tests require async test frameworks</li>
+</ul>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<h3 id="current-implementation">Current Implementation</h3>
+<ul>
+<li>All transport operations are async: <code>connect()</code>, <code>send_message()</code>, <code>receive_message()</code>, <code>disconnect()</code></li>
+<li>Request handling pipeline is fully async</li>
+<li>Test suite uses <code>pytest-asyncio</code> for async test support</li>
+<li>Error handling preserves async context</li>
+<li>Note: Validation operations are synchronous (fast, CPU-bound) while I/O operations are async</li>
+</ul>
+<h3 id="async-patterns-used">Async Patterns Used</h3>
+<pre><code class="language-python"><span class="c1"># Concurrent operations</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">validate_parallel</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">requests</span><span class="p">):</span>
+    <span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">validate_single</span><span class="p">(</span><span class="n">req</span><span class="p">)</span> <span class="k">for</span> <span class="n">req</span> <span class="ow">in</span> <span class="n">requests</span><span class="p">]</span>
+    <span class="k">return</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">*</span><span class="n">tasks</span><span class="p">)</span>
+
+<span class="c1"># Resource management</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">with_connection</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">with</span> <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span> <span class="k">as</span> <span class="n">conn</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">conn</span>
+
+<span class="c1"># Timeout handling</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send_with_timeout</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">):</span>
+    <span class="k">return</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transport</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">message</span><span class="p">),</span> 
+        <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span>
+    <span class="p">)</span>
+</code></pre>
+<h3 id="performance-considerations">Performance Considerations</h3>
+<ul>
+<li>Use <code>asyncio.gather()</code> for parallel operations</li>
+<li>Implement connection pooling for HTTP transports</li>
+<li>Consider <code>asyncio.Queue</code> for buffering</li>
+<li>Monitor event loop health in production</li>
+</ul>
+<h2 id="review">Review</h2>
+<p>This decision will be reviewed when:</p>
+<ul>
+<li>Performance bottlenecks indicate async overhead</li>
+<li>Team productivity suffers from async complexity</li>
+<li>Python ecosystem significantly changes async patterns</li>
+<li>Integration requirements favor synchronous patterns</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

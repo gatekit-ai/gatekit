@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-020: Middleware Plugin Architecture with Request Completion Capability - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit was initially conceived as a security gateway for MCP (Model Context Protocol) communications, with security plugins that could block malicious conte...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-020-middleware-plugin-architecture-with-request-completion-capability">ADR-020: Middleware Plugin Architecture with Request Completion Capability</h1>
+<p><strong>Note</strong>: This ADR originally proposed a separate <code>MiddlewareResult</code> type. That design was later unified into a single <code>PluginResult</code> type (see ADR-022). Code examples below use the current <code>PluginResult</code> interface.</p>
+<h2 id="context">Context</h2>
+<p>Gatekit was initially conceived as a security gateway for MCP (Model Context Protocol) communications, with security plugins that could block malicious content and auditing plugins that observed traffic. However, as we considered real-world developer needs for agentic workflows, we identified a gap in our architecture:</p>
+<h3 id="developer-pain-points">Developer Pain Points</h3>
+<ol>
+<li><strong>Context Window Bloat</strong>: LLMs receive too many tools, consuming valuable context</li>
+<li><strong>Poor Tool Naming</strong>: MCP servers provide tools with names that LLMs struggle to understand</li>
+<li><strong>Missing Functionality</strong>: No way to cache, rate limit, or transform content</li>
+<li><strong>Limited Extensibility</strong>: Security plugins are semantically wrong for non-security enhancements</li>
+</ol>
+<h3 id="the-tool_allowlist-dilemma">The tool_allowlist Dilemma</h3>
+<p>Our <code>tool_allowlist</code> plugin highlighted this architectural gap. It:</p>
+<ul>
+<li>Hides/blocks tools (security-like behavior)</li>
+<li>But does so for performance/usability, not security</li>
+<li>Marketing it as &quot;security&quot; confused the value proposition</li>
+<li>Developers want capability shaping, not just security</li>
+</ul>
+<h3 id="marketing-challenge">Marketing Challenge</h3>
+<p>Positioning Gatekit solely as a security gateway limits adoption. Developers need:</p>
+<ul>
+<li>Performance optimization tools</li>
+<li>Workflow enhancement capabilities</li>
+<li>Integration points for their systems</li>
+<li>Context management for agents</li>
+</ul>
+<h2 id="decision">Decision</h2>
+<p>We will introduce a new <strong>Middleware Plugin</strong> type that:</p>
+<ol>
+<li><strong>Sits between the client and security plugins</strong> in the processing pipeline</li>
+<li><strong>Can either transform OR complete requests</strong> without conflating with security</li>
+<li><strong>Focuses on functionality and developer productivity</strong> rather than trust decisions</li>
+</ol>
+<h3 id="key-architectural-decisions">Key Architectural Decisions</h3>
+<h4 id="1-three-distinct-plugin-types">1. Three Distinct Plugin Types</h4>
+<pre><code class="language-text"><span class="n">Client</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="p">[</span><span class="n">Middleware</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="n">Security</span><span class="w"> </span><span class="n">Plugins</span><span class="w"> </span><span class="p">(</span><span class="n">ordered</span><span class="w"> </span><span class="n">by</span><span class="w"> </span><span class="n">priority</span><span class="p">)]</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">Server</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="p">[</span><span class="n">Audit</span><span class="w"> </span><span class="n">Plugins</span><span class="p">]</span>
+<span class="w">                              </span><span class="err">↓</span><span class="w">                                             </span><span class="err">↓</span>
+<span class="w">                  </span><span class="p">(</span><span class="n">Shape</span><span class="o">/</span><span class="n">Optimize</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">Trust</span><span class="o">/</span><span class="n">Block</span><span class="p">)</span><span class="w">                        </span><span class="p">(</span><span class="n">Observe</span><span class="p">)</span>
+</code></pre>
+<ul>
+<li><strong>Middleware</strong>: Shapes functionality - &quot;How can I make this work better?&quot;</li>
+<li><strong>Security</strong>: Makes trust decisions - &quot;Is this safe? Does it violate policy?&quot;</li>
+<li><strong>Auditing</strong>: Observes everything - &quot;What happened? Who did what?&quot;</li>
+</ul>
+<p><strong>Note</strong>: Middleware and security plugins are intermixed and processed in priority order (0-100, lower = higher priority), not in separate sequential phases. This allows fine-grained control over when transformations occur relative to security checks.</p>
+<h4 id="2-pluginresult-with-dual-capability">2. PluginResult with Dual Capability</h4>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="c1"># Security decision (None for middleware that doesn&#39;t make security decisions)</span>
+    <span class="n">allowed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># Option 1: Transform and continue</span>
+    <span class="n">modified_content</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">MCPRequest</span><span class="p">,</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">MCPNotification</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="c1"># Option 2: Complete the request here</span>
+    <span class="n">completed_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+</code></pre>
+<p>This allows middleware to:</p>
+<ul>
+<li><strong>Transform</strong>: Modify content and pass it along</li>
+<li><strong>Complete</strong>: Fully handle the request (cache hit, rate limit, capability filtered)</li>
+</ul>
+<h4 id="3-no-quotblockingquot-for-middleware">3. No &quot;Blocking&quot; for Middleware</h4>
+<p>Critically, middleware does NOT set the <code>allowed</code> field (leaving it as <code>None</code>). When middleware returns a <code>completed_response</code>:</p>
+<ul>
+<li>It's not &quot;blocking&quot; the request</li>
+<li>It's saying &quot;I've fully handled this request, here's the response&quot;</li>
+<li>Semantically different from security blocking (which sets <code>allowed=False</code>)</li>
+</ul>
+<h4 id="4-tool_manager-as-middleware">4. tool_manager as Middleware</h4>
+<p>The <code>tool_allowlist</code> plugin becomes <code>tool_manager</code> middleware:</p>
+<ul>
+<li>Moves from <code>plugins/security/</code> to <code>plugins/middleware/</code></li>
+<li>When hiding tools, returns &quot;tool not available&quot; (not &quot;blocked&quot;)</li>
+<li>Framed as capability shaping, not security enforcement</li>
+<li>Reduces LLM context, improves tool selection</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ol>
+<li><strong>Clear Mental Model</strong>: Developers immediately understand the three-tier architecture</li>
+<li><strong>Expanded Use Cases</strong>: Enables caching, rate limiting, monitoring, transformations</li>
+<li><strong>Better Marketing</strong>: Position Gatekit as &quot;agentic workflow optimizer&quot; not just security</li>
+<li><strong>Honest Semantics</strong>: Hidden tools are &quot;not available&quot; not &quot;blocked for security&quot;</li>
+<li><strong>Extensibility</strong>: Developers can add custom middleware for their specific needs</li>
+<li><strong>Performance</strong>: Caching and rate limiting become first-class features</li>
+<li><strong>Debugging</strong>: Pipeline tracking shows exactly how requests are transformed/completed</li>
+</ol>
+<h3 id="negative">Negative</h3>
+<ol>
+<li><strong>Additional Complexity</strong>: Three plugin types instead of two</li>
+<li><strong>Migration Work</strong>: Moving tool_allowlist to middleware directory</li>
+<li><strong>Documentation</strong>: Need to explain the distinction clearly</li>
+<li><strong>Testing</strong>: More plugin interaction patterns to test</li>
+</ol>
+<h3 id="neutral">Neutral</h3>
+<ol>
+<li><strong>Pipeline Processing</strong>: Order matters more (middleware → security → server)</li>
+<li><strong>Configuration</strong>: New <code>middleware:</code> section in YAML configs</li>
+<li><strong>Priority System</strong>: Now spans middleware AND security plugins</li>
+</ol>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<h3 id="example-tool_manager-hiding-a-tool">Example: tool_manager Hiding a Tool</h3>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">!=</span> <span class="s2">&quot;tools/call&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">()</span>  <span class="c1"># Pass through</span>
+
+    <span class="n">tool_name</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">tool_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">allowed_tools</span><span class="p">:</span>
+        <span class="c1"># Not &quot;blocking&quot; - the tool doesn&#39;t exist in the shaped capability surface</span>
+        <span class="n">error_response</span> <span class="o">=</span> <span class="n">MCPResponse</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+            <span class="n">error</span><span class="o">=</span><span class="p">{</span>
+                <span class="s2">&quot;code&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">32601</span><span class="p">,</span>  <span class="c1"># Method not found</span>
+                <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Tool &#39;</span><span class="si">{</span><span class="n">tool_name</span><span class="si">}</span><span class="s2">&#39; is not available in this context&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="s2">&quot;capability_filtered&quot;</span><span class="p">}</span>
+            <span class="p">}</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+            <span class="n">completed_response</span><span class="o">=</span><span class="n">error_response</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Tool hidden to reduce LLM context&quot;</span>
+        <span class="p">)</span>
+</code></pre>
+<h3 id="example-cache-middleware">Example: Cache Middleware</h3>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+    <span class="n">cache_key</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_key</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">cached</span> <span class="o">:=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+            <span class="n">completed_response</span><span class="o">=</span><span class="n">cached</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Cache hit&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">PluginResult</span><span class="p">()</span>  <span class="c1"># Continue to upstream</span>
+</code></pre>
+<h3 id="pipeline-behavior">Pipeline Behavior</h3>
+<ol>
+<li>All plugins (middleware and security) are intermixed and run in priority order (0-100)</li>
+<li>If any plugin returns <code>completed_response</code>, pipeline stops</li>
+<li>Security plugins can block (allowed=false) at any point in the pipeline</li>
+<li>If request is blocked, pipeline stops immediately</li>
+<li>Everything is audited with full pipeline visibility</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="1-exception-based-flow-control">1. Exception-Based Flow Control</h3>
+<p>Have middleware throw exceptions to &quot;abort&quot; processing:</p>
+<ul>
+<li><strong>Rejected</strong>: Using exceptions for normal flow is an anti-pattern</li>
+<li>Adds complexity without benefit</li>
+<li>Makes debugging harder</li>
+</ul>
+<h3 id="2-unified-plugin-type-with-optional-blocking">2. Unified Plugin Type with Optional Blocking</h3>
+<p>Single plugin type that can optionally block:</p>
+<ul>
+<li><strong>Rejected</strong>: Muddies the waters between functionality and security</li>
+<li>Makes it unclear when blocking is appropriate</li>
+<li>Harder to market and explain</li>
+</ul>
+<h3 id="3-keep-tool_allowlist-as-security">3. Keep tool_allowlist as Security</h3>
+<p>Continue treating capability shaping as security:</p>
+<ul>
+<li><strong>Rejected</strong>: Semantically dishonest</li>
+<li>Limits marketing message</li>
+<li>Doesn't solve the broader extensibility need</li>
+</ul>
+<h3 id="4-two-middleware-types-transforming-vs-completing">4. Two Middleware Types (Transforming vs Completing)</h3>
+<p>Separate middleware that transforms from middleware that completes:</p>
+<ul>
+<li><strong>Rejected</strong>: Over-engineered</li>
+<li>Most middleware needs both capabilities</li>
+<li>Adds complexity without clear benefit</li>
+</ul>
+<h2 id="related-decisions">Related Decisions</h2>
+<ul>
+<li><strong>ADR-002</strong>: Async architecture (middleware must be async)</li>
+<li><strong>ADR-006</strong>: Plugin system design (middleware extends this)</li>
+<li><strong>ADR-007</strong>: Response filtering (middleware can filter before security)</li>
+<li><strong>ADR-008</strong>: Request/response processing order (middleware goes first)</li>
+</ul>
+<h2 id="future-considerations">Future Considerations</h2>
+<h3 id="standard-middleware-library">Standard Middleware Library</h3>
+<p>We should provide common middleware out of the box:</p>
+<ul>
+<li>Cache with configurable TTL</li>
+<li>Rate limiter with sliding windows</li>
+<li>Request/response logger</li>
+<li>Metrics collector</li>
+<li>Circuit breaker for unreliable servers</li>
+</ul>
+<h3 id="middleware-composition">Middleware Composition</h3>
+<p>Consider allowing middleware to be composed:</p>
+<ul>
+<li>Chain multiple transformations</li>
+<li>Conditional middleware based on routes</li>
+<li>Middleware groups with shared configuration</li>
+</ul>
+<h3 id="performance-optimizations">Performance Optimizations</h3>
+<p>Since middleware runs on every request:</p>
+<ul>
+<li>Consider parallel execution where possible</li>
+<li>Add middleware benchmarking</li>
+<li>Optimize the pipeline for common patterns</li>
+</ul>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<p>We will implement the three-tier plugin architecture with middleware plugins that can either transform or complete requests. This provides a clean mental model, enables powerful developer workflows, and positions Gatekit as more than just a security gateway - it becomes an essential tool for optimizing agentic interactions.</p>
+<p>The key insight is that &quot;completing&quot; a request (providing a response) is fundamentally different from &quot;blocking&quot; a request (security denial). This semantic distinction drives the entire architecture.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

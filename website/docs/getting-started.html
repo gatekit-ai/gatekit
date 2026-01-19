@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit is a Model Context Protocol (MCP) gateway that sits between your LLM/MCP client and servers, allowing you to filter, audit, and secure communication.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html" class="active">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="getting-started">Getting Started</h1>
+<p>Gatekit is a Model Context Protocol (MCP) gateway that sits between your LLM/MCP client and servers, allowing you to filter, audit, and secure communication.</p>
+<h2 id="installation">Installation</h2>
+<p>Requires Python 3.10+.</p>
+<pre><code class="language-bash"><span class="c1"># With uv (recommended)</span>
+uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>gatekit
+
+<span class="c1"># With pipx</span>
+pipx<span class="w"> </span>install<span class="w"> </span>gatekit
+
+<span class="c1"># With pip (in a virtual environment)</span>
+pip<span class="w"> </span>install<span class="w"> </span>gatekit
+</code></pre>
+<h2 id="quick-start">Quick Start</h2>
+<p>Launch the TUI to configure Gatekit:</p>
+<pre><code class="language-bash">gatekit
+</code></pre>
+<p>The guided setup wizard will:</p>
+<ol>
+<li><strong>Auto-detect</strong> MCP clients on your system (Claude Desktop, Codex, Claude Code, Cursor, Windsurf)</li>
+<li><strong>Discover</strong> all configured MCP servers from each client</li>
+<li><strong>Generate</strong> a complete Gatekit configuration</li>
+<li><strong>Provide</strong> client-specific setup instructions with copy buttons</li>
+<li><strong>Create</strong> restore scripts in case you want to revert</li>
+</ol>
+<p>After completing setup and restarting your MCP client, Gatekit is active.</p>
+<h2 id="manual-configuration">Manual Configuration</h2>
+<p>For MCP clients not detected by Guided Setup, configure Gatekit as an MCP server in your client's configuration:</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;servers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;gatekit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gatekit-gateway&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--config&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/absolute/path/to/gatekit.yaml&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<p>Example for VS Code (<code>.vscode/mcp.json</code>):</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;servers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;gatekit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gatekit-gateway&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--config&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;${userHome}/.config/gatekit/gatekit.yaml&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="configuration-files">Configuration Files</h3>
+<p>Gatekit stores its settings in a YAML configuration file. While the TUI is the recommended way to configure Gatekit, you can also edit the config file directly -- useful for version control, scripting, or AI-assisted configuration. See the <a href="/docs/concepts/configuration.html">Configuration Reference</a> for the complete schema.</p>
+<h2 id="see-gatekit-in-action">See Gatekit in Action</h2>
+<p>Guided setup enables the <strong>Call Trace</strong> plugin, which appends diagnostic info to every tool response. Most MCP clients don't display raw tool responses directly, but you can ask your AI agent:</p>
+<blockquote>
+<p>&quot;What does the Gatekit trace say for the last tool call?&quot;</p>
+</blockquote>
+<p>The agent will see something like:</p>
+<pre><code class="language-text">---
+🔍 **Gatekit Gateway Trace**
+<span class="k">-</span> Server: filesystem
+<span class="k">-</span> Tool: read_file
+<span class="k">-</span> Params: {&quot;path&quot;: &quot;/home/user/document.txt&quot;}
+<span class="k">-</span> Response: 1.2 KB
+<span class="k">-</span> Duration: 23ms
+<span class="k">-</span> Request ID: 42
+<span class="k">-</span> Timestamp: 2025-01-15T10:30:45Z
+---
+</code></pre>
+<p>This confirms Gatekit is intercepting traffic. The trace shows which server handled the request, timing info, and a request ID you can use to find this request in your audit logs.</p>
+<h2 id="using-tool-manager-to-reduce-unnecessary-tool-calls">Using Tool Manager to Reduce Unnecessary Tool Calls</h2>
+<p>Let's use the <strong>Tool Manager</strong> plugin to optimize an MCP server. We'll hide an unnecessary tool and improve a tool description to help the AI use it more effectively.</p>
+<p>After guided setup, you're on the config editor screen. We'll use <a href="https://context7.com">Context7</a> as our example server—it provides up-to-date documentation for any programming library.</p>
+<h3 id="add-context7-if-needed">Add Context7 (if needed)</h3>
+<p>If Context7 isn't already in your config:</p>
+<ol>
+<li>Click the <strong>+ Add</strong> button in the MCP Servers panel header</li>
+<li>Enter <code>context7</code> as the server name</li>
+<li>Paste this command:<pre><code class="language-text"><span class="n">npx</span><span class="w"> </span><span class="o">-</span><span class="n">y</span><span class="w"> </span><span class="nv">@upstash</span><span class="o">/</span><span class="n">context7</span><span class="o">-</span><span class="n">mcp</span>
+</code></pre>
+</li>
+<li>Click <strong>Connect</strong></li>
+</ol>
+<p>Context7 should now appear in your server list with its tools loaded.</p>
+<h3 id="configure-tool-manager">Configure Tool Manager</h3>
+<ol>
+<li><p><strong>Select context7</strong> in the MCP Servers panel</p>
+</li>
+<li><p><strong>Find Tool Manager</strong> in the Middleware Plugins table and click <strong>Configure</strong></p>
+</li>
+<li><p><strong>In the configuration dialog:</strong></p>
+<ul>
+<li><strong>Uncheck</strong> <code>resolve-library-id</code> — we'll hardcode the library ID instead</li>
+<li><strong>Replace the <code>query-docs</code> description</strong> with:<pre><code class="language-text"><span class="nx">Retrieves</span><span class="w"> </span><span class="k">and</span><span class="w"> </span><span class="nx">queries</span><span class="w"> </span><span class="nx">up</span><span class="o">-</span><span class="nx">to</span><span class="o">-</span><span class="nx">date</span><span class="w"> </span><span class="nx">documentation</span><span class="w"> </span><span class="k">and</span><span class="w"> </span><span class="nx">code</span><span class="w"> </span><span class="nx">examples</span><span class="p">.</span><span class="w"> </span><span class="nx">Use</span><span class="w"> </span><span class="nx">the</span><span class="w"> </span><span class="kn">library</span><span class="w"> </span><span class="nx">ID</span><span class="w"> </span><span class="err">&#39;</span><span class="o">/</span><span class="nx">websites</span><span class="o">/</span><span class="nx">devdocs_io_python_3_14</span><span class="err">&#39;</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nx">Python</span><span class="w"> </span><span class="nx">documentation</span><span class="p">.</span>
+</code></pre>
+</li>
+</ul>
+</li>
+<li><p><strong>Click OK</strong> to close the configuration dialog</p>
+</li>
+<li><p><strong>Save</strong> with <code>Ctrl+S</code></p>
+</li>
+<li><p><strong>Restart your MCP client</strong> to pick up the changes</p>
+</li>
+</ol>
+<h3 id="verify-it-works">Verify It Works</h3>
+<p>After restarting, check that:</p>
+<ul>
+<li>The <code>resolve-library-id</code> tool no longer appears in your available tools</li>
+<li>The <code>query-docs</code> tool shows your new description</li>
+</ul>
+<h3 id="test-it">Test It</h3>
+<p>Ask your AI agent:</p>
+<blockquote>
+<p>&quot;Ask context7 what parameters does asyncio.gather accept and how does return_exceptions work? Then list all tool calls you made with the parameters you used.&quot;</p>
+</blockquote>
+<p>The agent should answer your question and show that it called <code>query-docs</code> directly with the hardcoded library ID—no extra fluff in the description and not extra call to <code>resolve-library-id</code> needed. You've reduced token usage and made the workflow more efficient.</p>
+<h2 id="using-basic-secrets-filter-to-protect-credentials">Using Basic Secrets Filter to Protect Credentials</h2>
+<p>Gatekit's security plugins can detect and redact sensitive data flowing through MCP servers. Let's see this in action with a simple demo.</p>
+<h3 id="a-note-on-this-demo">A Note on This Demo</h3>
+<p>This example is easy to observe but also easy to bypass. An AI agent with shell access could read the same environment variable using <code>echo $GITHUB_TOKEN</code> instead of the MCP server. Gatekit only inspects traffic flowing through MCP.</p>
+<p>In practice, Gatekit's security filtering provides the most value when protecting data the agent <em>can't</em> access any other way:</p>
+<ul>
+<li><strong>Database queries</strong> returning customer records, API keys stored in config tables, or PII from user tables</li>
+<li><strong>Business app integrations</strong> like Salesforce, HubSpot, or healthcare systems where MCP servers have authenticated access your AI agent couldn't otherwise reach</li>
+<li><strong>Exfiltration prevention</strong> when MCP servers (Slack, GitHub, email) have credentials that aren't available to the shell—blocking secrets in outgoing requests before they leave your system</li>
+</ul>
+<p>Gatekit is one layer in a defense-in-depth strategy, not a complete security solution on its own.</p>
+<h3 id="demo-watch-a-token-get-redacted">Demo: Watch a Token Get Redacted</h3>
+<p>We'll use the <a href="https://www.npmjs.com/package/@modelcontextprotocol/server-everything">Everything server</a>—a demo MCP server that includes a <code>get-env</code> tool which returns environment variables.</p>
+<p><strong>Add the Everything Server:</strong></p>
+<ol>
+<li>Click <strong>+ Add</strong> in the MCP Servers panel header</li>
+<li>Enter <code>everything</code> as the server name</li>
+<li>Paste this command:<pre><code class="language-text"><span class="n">npx</span><span class="w"> </span><span class="o">-</span><span class="n">y</span><span class="w"> </span><span class="nv">@modelcontextprotocol</span><span class="o">/</span><span class="n">server</span><span class="o">-</span><span class="n">everything</span>
+</code></pre>
+</li>
+<li>Click <strong>Connect</strong></li>
+</ol>
+<p><strong>Set up a test token</strong> (preserving any existing one):</p>
+<pre><code class="language-bash"><span class="c1"># Save existing token if you have one</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">SAVED_GITHUB_TOKEN</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$GITHUB_TOKEN</span><span class="s2">&quot;</span>
+
+<span class="c1"># Set a fake token for testing</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_TOKEN</span><span class="o">=</span>ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+</code></pre>
+<p>Restart the TUI (<code>gatekit</code>) so it picks up the new environment variable.</p>
+<p><strong>Enable Basic Secrets Filter:</strong></p>
+<ol>
+<li><strong>Click on Global Settings</strong> in the MCP Servers panel</li>
+<li><strong>Find Basic Secrets Filter</strong> in the Security Plugins table and click <strong>Configure</strong></li>
+<li><strong>Ensure GitHub tokens are enabled</strong> (they are by default)</li>
+<li><strong>Set action to &quot;redact&quot;</strong> — this replaces secrets with <code>[REDACTED]</code> rather than blocking the entire response</li>
+<li><strong>Click OK</strong> and <strong>Save</strong> with <code>Ctrl+S</code></li>
+<li><strong>Restart your MCP client</strong></li>
+</ol>
+<p><strong>Test it</strong> by asking your AI agent:</p>
+<blockquote>
+<p>&quot;Use the everything server's get-env tool to show me my environment variables. What's my GITHUB_TOKEN set to?&quot;</p>
+</blockquote>
+<p>The agent will report that <code>GITHUB_TOKEN</code> is <code>[REDACTED]</code>. Gatekit detected the <code>ghp_</code> prefix pattern and redacted it before the response reached your AI agent.</p>
+<p><strong>Clean up</strong> by restoring your original token:</p>
+<pre><code class="language-bash"><span class="nb">export</span><span class="w"> </span><span class="nv">GITHUB_TOKEN</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$SAVED_GITHUB_TOKEN</span><span class="s2">&quot;</span>
+<span class="nb">unset</span><span class="w"> </span>SAVED_GITHUB_TOKEN
+</code></pre>
+<h2 id="next-steps">Next Steps</h2>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration Reference</a> - Complete YAML schema documentation</li>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a> - Advanced tool filtering, renaming, and descriptions</li>
+<li><a href="/docs/concepts/security.html">Security Plugins</a> - Block PII, secrets, and prompt injection</li>
+<li><a href="/docs/plugins/development-guide.html">Plugin Development</a> - Write your own plugins</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

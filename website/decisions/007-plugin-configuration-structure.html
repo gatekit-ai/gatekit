@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-007: Plugin Configuration Structure - Gatekit Documentation</title>
+  <meta name="description" content="This ADR documents the evolution of the plugin configuration system from path-based to policy-based to the current handler-based approach.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-007-plugin-configuration-structure">ADR-007: Plugin Configuration Structure</h1>
+<p><strong>Last Validated</strong>: 2026-01-17 - Updated to reflect current handler-based implementation.</p>
+<h2 id="historical-context">Historical Context</h2>
+<p>This ADR documents the evolution of the plugin configuration system from path-based to policy-based to the current handler-based approach.</p>
+<h3 id="original-path-based-decision-v010-initial">Original Path-Based Decision (v0.1.0 Initial)</h3>
+<p>Gatekit v0.1.0 initially implemented a path-based plugin configuration system:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;./plugins/security/tool_allowlist.py&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;allowlist&quot;</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;read_file&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h3 id="evolution-to-policy-based-system-v010-mid">Evolution to Policy-Based System (v0.1.0 Mid)</h3>
+<p>During v0.1.0 development, the system evolved to use a policy-based manifest approach:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_allowlist&quot;</span><span class="w">  </span><span class="c1"># Changed from &#39;path&#39;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;allowlist&quot;</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;read_file&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h3 id="current-handler-based-system-v010-final">Current Handler-Based System (v0.1.0 Final)</h3>
+<p>The final implementation uses 'handler' as the field name for better clarity:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">  </span><span class="c1"># Final field name</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span>
+</code></pre>
+<p>Note: Tool management is implemented as a <strong>middleware plugin</strong> (not security) because it handles operational concerns. The <code>mode</code> field is no longer supported - the plugin uses implicit allowlist semantics.</p>
+<h2 id="current-implementation-handler-based">Current Implementation (Handler-Based)</h2>
+<p>The final v0.1.0 implementation uses a <strong>handler-based plugin configuration</strong> system where:</p>
+<ol>
+<li><strong>Plugins declare handlers</strong> via HANDLERS manifest in their modules</li>
+<li><strong>Configuration references handlers</strong> by name rather than file paths</li>
+<li><strong>Plugin discovery</strong> is automatic based on installed plugin manifests</li>
+</ol>
+<h3 id="key-benefits-of-handler-based-approach">Key Benefits of Handler-Based Approach</h3>
+<ul>
+<li><strong>Abstraction</strong>: Configuration independent of file structure</li>
+<li><strong>Discoverability</strong>: Automatic policy discovery from installed plugins</li>
+<li><strong>Flexibility</strong>: Multiple plugins can implement the same policy</li>
+<li><strong>Maintainability</strong>: Plugin reorganization doesn't break configurations</li>
+</ul>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="plugin-manifest-system">Plugin Manifest System</h3>
+<p>Each plugin module contains a HANDLERS manifest:</p>
+<pre><code class="language-python"><span class="c1"># In gatekit/plugins/middleware/tool_manager.py</span>
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;tool_manager&quot;</span><span class="p">:</span> <span class="n">ToolManagerPlugin</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="configuration-schema">Configuration Schema</h3>
+<p>Plugin configurations use handler names:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">  </span><span class="c1"># References handler name, not file path</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span>
+</code></pre>
+<h3 id="plugin-scope-validation">Plugin Scope Validation</h3>
+<p>Plugins declare their scope via <code>DISPLAY_SCOPE</code> class attribute:</p>
+<ul>
+<li><code>&quot;global&quot;</code>: Can be configured in <code>_global</code> section (default)</li>
+<li><code>&quot;server_aware&quot;</code>: Can be in <code>_global</code> or per-server sections</li>
+<li><code>&quot;server_specific&quot;</code>: Must be configured per-server only</li>
+</ul>
+<p>Server-aware and server-specific plugins <strong>cannot</strong> be placed in <code>_global</code> when they require per-server context.</p>
+<h3 id="discovery-and-loading-process">Discovery and Loading Process</h3>
+<ol>
+<li>Plugin manager scans <code>gatekit/plugins/{category}/</code> directories for HANDLERS manifests</li>
+<li>Builds registry of available handlers and their implementations via <code>_discover_handlers()</code></li>
+<li>Configuration loader validates handler names at config load time (not runtime)</li>
+<li>Runtime loads appropriate plugin classes based on handler names</li>
+</ol>
+<h2 id="migration-impact">Migration Impact</h2>
+<h3 id="breaking-changes-from-path-based-system">Breaking Changes from Path-Based System</h3>
+<ul>
+<li>Configuration field evolved: <code>path:</code> → <code>policy:</code> → <code>handler:</code></li>
+<li>Plugin discovery no longer requires explicit file paths</li>
+<li>Validation checks handler availability instead of file existence</li>
+</ul>
+<h3 id="benefits-gained">Benefits Gained</h3>
+<ul>
+<li><strong>Simplified configuration</strong>: No need to know internal file structure</li>
+<li><strong>Better error messages</strong>: Clear indication when handlers are unavailable</li>
+<li><strong>Plugin portability</strong>: Plugins can be reorganized without config changes</li>
+<li><strong>Extensibility</strong>: Foundation for future plugin marketplace/registry</li>
+</ul>
+<h2 id="legacy-information">Legacy Information</h2>
+<p>The remainder of this document contains the original path-based design rationale, preserved for historical context.</p>
+<p>&lt;details&gt;
+&lt;summary&gt;Original Path-Based Design (Historical)&lt;/summary&gt;</p>
+<h3 id="original-decision-rationale">Original Decision Rationale</h3>
+<p>The path-based approach was chosen initially to avoid premature optimization and infrastructure complexity. However, during implementation, the benefits of a policy-based manifest system became apparent and justified the additional complexity.</p>
+<h3 id="original-consequences">Original Consequences</h3>
+<h4 id="positive-path-based">Positive (Path-Based)</h4>
+<ul>
+<li><strong>Simplicity</strong>: No indirection between configuration and plugin location</li>
+<li><strong>Transparency</strong>: Users see exactly which files are being loaded</li>
+<li><strong>No infrastructure dependency</strong>: Works entirely offline</li>
+<li><strong>Familiar pattern</strong>: Similar to Docker volumes, Kubernetes ConfigMaps</li>
+<li><strong>Easy debugging</strong>: Clear path from config to plugin file</li>
+</ul>
+<h4 id="negative-path-based">Negative (Path-Based)</h4>
+<ul>
+<li><strong>More verbose</strong>: Full file paths instead of short names</li>
+<li><strong>Manual management</strong>: No automatic plugin discovery from registry</li>
+<li><strong>Path dependencies</strong>: Configuration tied to specific file structure</li>
+</ul>
+<h4 id="neutral-path-based">Neutral (Path-Based)</h4>
+<ul>
+<li><strong>Compatibility</strong>: Registry support can be added alongside existing configurations</li>
+<li><strong>Plugin distribution</strong>: Third-party plugins distributed as files</li>
+</ul>
+<p>&lt;/details&gt;</p>
+<h2 id="related-adrs">Related ADRs</h2>
+<ul>
+<li>ADR-021: Handler Nomenclature - documents the shift from &quot;policy&quot; to &quot;handler&quot; terminology</li>
+<li>ADR-019: Plugin Equality Principle - ensures built-in and user plugins are treated equally</li>
+</ul>
+<h2 id="review-criteria">Review Criteria</h2>
+<p>This approach may need adjustment when:</p>
+<ul>
+<li>Users request easier plugin distribution mechanisms</li>
+<li>Multiple third-party plugins exist that would benefit from centralized hosting</li>
+<li>Plugin management complexity becomes a significant user pain point</li>
+<li>Registry infrastructure can be properly maintained and supported</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

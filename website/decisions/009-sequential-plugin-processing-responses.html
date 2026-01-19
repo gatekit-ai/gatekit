@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-009: Sequential Plugin Processing for Responses - Gatekit Documentation</title>
+  <meta name="description" content="When implementing response modification capabilities (see ADR-008), we needed to determine how multiple plugins should interact when processing responses. Th...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-009-sequential-plugin-processing-for-responses">ADR-009: Sequential Plugin Processing for Responses</h1>
+<p><strong>Note</strong>: This ADR uses current terminology (<code>process_response</code>, <code>modified_content</code>, <code>PluginResult</code>). See ADR-022 for the unified result type.</p>
+<h2 id="context">Context</h2>
+<p>When implementing response modification capabilities (see ADR-008), we needed to determine how multiple plugins should interact when processing responses. The key question was whether plugins should process responses in parallel with conflict resolution, or sequentially with cumulative modifications.</p>
+<p>This decision affects:</p>
+<ul>
+<li><strong>Deterministic behavior</strong>: Whether plugin processing order matters</li>
+<li><strong>Plugin interaction</strong>: How plugins compose their modifications</li>
+<li><strong>Performance</strong>: Processing time and resource usage</li>
+<li><strong>Debugging</strong>: Ability to trace plugin effects</li>
+<li><strong>Configuration complexity</strong>: How users understand plugin behavior</li>
+</ul>
+<h3 id="use-case-driving-the-decision">Use Case Driving the Decision</h3>
+<p>The tool allowlist plugin filters <code>tools/list</code> responses, potentially followed by other plugins that might:</p>
+<ul>
+<li>Add metadata to tool descriptions</li>
+<li>Reorder tools based on priority</li>
+<li>Transform tool schemas for compatibility</li>
+<li>Log or audit tool access patterns</li>
+</ul>
+<h2 id="decision">Decision</h2>
+<p>We will implement <strong>sequential plugin processing</strong> where plugins process responses one after another, with each plugin receiving the output of the previous plugin as input.</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process response through plugins sequentially.&quot;&quot;&quot;</span>
+    <span class="n">current_response</span> <span class="o">=</span> <span class="n">response</span>
+    
+    <span class="k">for</span> <span class="n">plugin</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">response_plugins</span><span class="p">:</span>
+        <span class="n">decision</span> <span class="o">=</span> <span class="k">await</span> <span class="n">plugin</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">current_response</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">decision</span><span class="o">.</span><span class="n">allowed</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">PluginBlockedError</span><span class="p">(</span><span class="n">decision</span><span class="o">.</span><span class="n">reason</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">current_response</span> <span class="o">=</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span>
+            <span class="c1"># Next plugin receives this modified response</span>
+    
+    <span class="k">return</span> <span class="n">current_response</span>
+</code></pre>
+<h3 id="processing-order">Processing Order</h3>
+<p>Plugin processing order is determined by priority values (0-100, with 50 as default). All middleware and security plugins are sorted together in a unified pipeline:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">       </span><span class="c1"># Processes first (priority: 10)</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span><span class="w">   </span><span class="c1"># Processes second (priority: 20)</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+</code></pre>
+<p><strong>Note</strong>: Auditing plugins do NOT participate in sequential response processing. They observe the final result via <code>log_response()</code> after the processing pipeline completes, and they execute in definition order (not by priority).</p>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-parallel-processing-with-conflict-resolution">Alternative 1: Parallel Processing with Conflict Resolution</h3>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process response through all plugins in parallel.&quot;&quot;&quot;</span>
+    <span class="n">decisions</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">*</span><span class="p">[</span>
+        <span class="n">plugin</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">response</span><span class="p">)</span> 
+        <span class="k">for</span> <span class="n">plugin</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">response_plugins</span>
+    <span class="p">])</span>
+    
+    <span class="c1"># Resolve conflicts between different modifications</span>
+    <span class="k">return</span> <span class="n">resolve_response_conflicts</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">decisions</span><span class="p">)</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Conflict resolution complexity</strong>: No clear rules for merging conflicting modifications</li>
+<li><strong>Non-deterministic behavior</strong>: Parallel execution order can vary</li>
+<li><strong>Plugin interaction unclear</strong>: Plugins can't build on each other's work</li>
+<li><strong>Debugging difficulty</strong>: Hard to trace which plugin caused what change</li>
+</ul>
+<h3 id="alternative-3-plugin-priority-system">Alternative 3: Plugin Priority System</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_allowlist&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">  </span><span class="c1"># Higher priority (lower number)</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;content_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">  </span><span class="c1"># Default priority</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Configuration complexity</strong>: Users must understand and manage priority values</li>
+<li><strong>Maintenance burden</strong>: Priorities need coordination across plugin ecosystem</li>
+<li><strong>Still requires conflict resolution</strong>: Multiple plugins at same priority level</li>
+<li><strong>Harder migration</strong>: Existing configurations would need priority assignment</li>
+</ul>
+<p>Note: This alternative was later reconsidered and adopted in a subsequent decision.</p>
+<h3 id="alternative-4-plugin-dependency-declaration">Alternative 4: Plugin Dependency Declaration</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">ContentFilterPlugin</span><span class="p">:</span>
+    <span class="n">depends_on</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;tool_allowlist&quot;</span><span class="p">]</span>  <span class="c1"># Must run after allowlist</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Dependency complexity</strong>: Creates plugin coupling and circular dependency risks</li>
+<li><strong>Configuration validation</strong>: Need to verify dependency graphs are valid</li>
+<li><strong>Over-engineering</strong>: Current use cases don't require complex dependencies</li>
+<li><strong>Plugin portability</strong>: Plugins become less reusable across configurations</li>
+</ul>
+<p>Note: This alternative was later reconsidered and rejected in favor of a simple priority system.</p>
+<h3 id="alternative-5-response-accumulation-with-original">Alternative 5: Response Accumulation with Original</h3>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Each plugin sees original response, accumulate changes.&quot;&quot;&quot;</span>
+    <span class="n">modifications</span> <span class="o">=</span> <span class="p">[]</span>
+    
+    <span class="k">for</span> <span class="n">plugin</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">response_plugins</span><span class="p">:</span>
+        <span class="n">decision</span> <span class="o">=</span> <span class="k">await</span> <span class="n">plugin</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>  <span class="c1"># Always original</span>
+        <span class="k">if</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span><span class="p">:</span>
+            <span class="n">modifications</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">merge_modifications</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">modifications</span><span class="p">)</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Limited plugin capabilities</strong>: Plugins can't see effects of previous plugins</li>
+<li><strong>Complex merging logic</strong>: Need sophisticated merge strategies</li>
+<li><strong>Use case mismatch</strong>: Some plugins need to see filtered/modified responses</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Deterministic Behavior</strong>: Same input always produces same output</li>
+<li><strong>Simple Mental Model</strong>: Easy to understand and predict plugin behavior</li>
+<li><strong>Plugin Composition</strong>: Plugins can build on each other's modifications</li>
+<li><strong>Easy Debugging</strong>: Clear trace of how response evolved through plugins</li>
+<li><strong>Configuration Simplicity</strong>: Priority values determine processing order</li>
+<li><strong>Performance Predictability</strong>: Linear processing time, no conflict resolution overhead</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Order Dependency</strong>: Plugin priority values matter significantly</li>
+<li><strong>Potential Inefficiency</strong>: Later plugins might undo work of earlier plugins</li>
+<li><strong>Plugin Coupling</strong>: Plugins may need to be aware of other plugins' effects</li>
+<li><strong>Serial Bottleneck</strong>: Can't parallelize plugin processing for performance</li>
+</ul>
+<h3 id="mitigation-strategies">Mitigation Strategies</h3>
+<ol>
+<li><strong>Clear Documentation</strong>: Explain priority system and its implications</li>
+<li><strong>Plugin Guidelines</strong>: Best practices for plugin design and priority assignment</li>
+<li><strong>Configuration Validation</strong>: Warn about potentially problematic plugin priorities</li>
+<li><strong>Audit Logging</strong>: Log each plugin's decision for transparency</li>
+</ol>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="plugin-manager-sequential-processing">Plugin Manager Sequential Processing</h3>
+<p>The actual implementation returns a <code>ProcessingPipeline</code> object that provides full visibility into each processing stage:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">PluginManager</span><span class="p">:</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ProcessingPipeline</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Process response through all enabled plugins sequentially.&quot;&quot;&quot;</span>
+        <span class="c1"># Creates a ProcessingPipeline with PipelineStage for each plugin</span>
+        <span class="c1"># Middleware and security plugins are sorted together by priority</span>
+        <span class="c1"># Auditing plugins are NOT included - they observe via log_response() after</span>
+</code></pre>
+<h3 id="plugin-ordering-strategy">Plugin Ordering Strategy</h3>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">_get_processing_pipeline</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PluginInterface</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get plugins in processing order: sorted by priority (0-100, lower = higher priority).&quot;&quot;&quot;</span>
+    <span class="n">all_plugins</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="c1"># Collect middleware plugins</span>
+    <span class="n">all_plugins</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resolve_plugins_for_upstream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">middleware_plugins</span><span class="p">,</span> <span class="n">server_name</span><span class="p">))</span>
+
+    <span class="c1"># Collect security plugins</span>
+    <span class="n">all_plugins</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_resolve_plugins_for_upstream</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">security_plugins</span><span class="p">,</span> <span class="n">server_name</span><span class="p">))</span>
+
+    <span class="c1"># Sort by priority (ascending - lower numbers first)</span>
+    <span class="n">all_plugins</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">p</span><span class="p">:</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="s2">&quot;priority&quot;</span><span class="p">,</span> <span class="mi">50</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">all_plugins</span>
+</code></pre>
+<p><strong>Key points:</strong></p>
+<ul>
+<li>Middleware and security plugins are <strong>intermixed</strong> based on priority, not processed in separate phases</li>
+<li>Auditing plugins execute in <strong>definition order</strong> (not by priority) after the pipeline completes</li>
+<li>The pipeline returns a <code>ProcessingPipeline</code> with full <code>PipelineStage</code> records for observability</li>
+</ul>
+<p>This sequential processing approach provides predictable, debuggable plugin behavior while enabling powerful plugin composition for response modification use cases.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

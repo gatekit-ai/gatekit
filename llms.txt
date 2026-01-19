@@ -1,0 +1,32 @@
+# Gatekit
+
+> Gatekit is a hackable MCP gateway. Built-in plugins handle tool filtering, audit logging, and content security. Extend with Python plugins when needed.
+
+Gatekit sits between MCP clients (Claude Desktop, Cursor, Claude Code, etc.) and upstream MCP servers, applying security policies, middleware transformations, and audit logging to all traffic.
+
+## Documentation
+
+- [README](README.md): Project overview, installation, quick start, and architecture
+- [Getting Started](docs/getting-started.md): Quick start guide for new users
+- [Tutorial: Managing Tools](docs/tutorial-managing-tools.md): How to filter, rename, and customize tool descriptions
+- [Configuration Specification](docs/configuration-specification.md): Complete reference for gatekit.yaml configuration files
+- [Plugin Development Guide](docs/plugin-development-guide.md): How to write custom middleware, security, and auditing plugins
+- [Built-in Plugins Reference](docs/reference/plugins/index.md): Documentation for all built-in plugins
+- [Security Model](docs/security-model.md): Trust boundaries, threat model, and security architecture
+- [Routing Model](docs/routing-model.md): Internal reference for request routing and namespacing
+- [Known Issues](docs/known-issues.md): Current limitations and workarounds
+
+## Project Files
+
+- [CONTRIBUTING](CONTRIBUTING.md): Contribution policy (not accepting code contributions currently)
+- [SECURITY](SECURITY.md): How to report security vulnerabilities
+- [CHANGELOG](CHANGELOG.md): Release history
+- [LICENSE](LICENSE): Apache License 2.0
+
+## Source Code
+
+- [gatekit/](gatekit/): Main package
+- [gatekit/plugins/](gatekit/plugins/): Built-in plugins (tool_manager, basic_pii_filter, basic_secrets_filter, audit logging, etc.)
+- [gatekit/tui/](gatekit/tui/): Terminal user interface
+- [gatekit/config/](gatekit/config/): Configuration loading and validation
+- [gatekit/gateway/](gatekit/gateway/): MCP proxy implementation

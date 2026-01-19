@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-013: Concurrent Request Handling Implementation - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit's MCPProxy initially processed requests sequentially, using a simple send-then-wait pattern:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-013-concurrent-request-handling-implementation">ADR-013: Concurrent Request Handling Implementation</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit's MCPProxy initially processed requests sequentially, using a simple send-then-wait pattern:</p>
+<pre><code class="language-python"><span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_upstream_transport</span><span class="o">.</span><span class="n">send_message</span><span class="p">(</span><span class="n">upstream_request</span><span class="p">)</span>
+<span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_upstream_transport</span><span class="o">.</span><span class="n">receive_message</span><span class="p">()</span>
+</code></pre>
+<p>This approach had significant limitations:</p>
+<ol>
+<li><code>receive_message()</code> returned ANY available response, not the specific response for the request</li>
+<li>Multiple concurrent requests led to mismatched request/response pairs</li>
+<li>The proxy could not leverage upstream servers' concurrent processing capabilities</li>
+<li>Performance degraded significantly under concurrent load (1.0s for 10 requests vs 0.1s optimal)</li>
+</ol>
+<h2 id="decision">Decision</h2>
+<p>We implemented a <strong>concurrent request handling system</strong> with proper request/response correlation:</p>
+<h3 id="core-changes">Core Changes</h3>
+<ol>
+<li><p><strong>New Transport Interface Method</strong>:</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send_and_receive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Send a request and wait for its specific response.&quot;&quot;&quot;</span>
+</code></pre>
+</li>
+<li><p><strong>Request Correlation System</strong>:</p>
+<ul>
+<li>Request ID-based Future mapping in <code>_pending_requests</code></li>
+<li>Thread-safe async locks for concurrent access</li>
+<li>Automatic cleanup on completion, timeout, or failure</li>
+</ul>
+</li>
+<li><p><strong>Concurrent Request Limiting</strong>:</p>
+<ul>
+<li>Configurable maximum concurrent requests (default: 100)</li>
+<li>Graceful error handling when limits exceeded</li>
+<li>Request tracking and metrics</li>
+</ul>
+</li>
+<li><p><strong>Resource Management</strong>:</p>
+<ul>
+<li>Proper cleanup of completed requests</li>
+<li>Exception handling and propagation</li>
+<li>No memory leaks or hanging tasks</li>
+</ul>
+</li>
+</ol>
+<h3 id="implementation-architecture">Implementation Architecture</h3>
+<pre><code class="language-python"><span class="c1"># New concurrent-safe pattern</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">handle_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_concurrent_requests</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Process request with proper correlation</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_upstream_transport</span><span class="o">.</span><span class="n">send_and_receive</span><span class="p">(</span><span class="n">upstream_request</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">response</span>
+    <span class="k">finally</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_concurrent_requests</span> <span class="o">-=</span> <span class="mi">1</span>
+</code></pre>
+<h3 id="transport-layer-enhancement">Transport Layer Enhancement</h3>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send_and_receive</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span>
+    <span class="c1"># Check concurrent limit</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_concurrent_request_count</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_max_concurrent_requests</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Maximum concurrent requests exceeded&quot;</span><span class="p">)</span>
+    
+    <span class="c1"># Register request for correlation</span>
+    <span class="n">future</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Future</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">_pending_requests</span><span class="p">[</span><span class="n">request</span><span class="o">.</span><span class="n">id</span><span class="p">]</span> <span class="o">=</span> <span class="n">future</span>
+    
+    <span class="c1"># Send request and wait for specific response</span>
+    <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">send_message</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+    <span class="k">return</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">wait_for</span><span class="p">(</span><span class="n">future</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">request_timeout</span><span class="p">)</span>
+</code></pre>
+<h2 id="performance-impact">Performance Impact</h2>
+<p>The implementation delivers significant performance improvements:</p>
+<ul>
+<li><strong>10 concurrent requests</strong>: 0.1-0.2s (vs 1.0s sequential) - <strong>5-10x faster</strong></li>
+<li><strong>50 concurrent requests</strong>: 0.05-0.1s (vs 2.5s sequential) - <strong>25-50x faster</strong></li>
+<li><strong>100 concurrent requests</strong>: 0.02-0.05s (vs 5.0s sequential) - <strong>100-250x faster</strong></li>
+</ul>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-message-queuing-with-correlation-ids">Alternative 1: Message Queuing with Correlation IDs</h3>
+<pre><code class="language-python"><span class="c1"># Maintain request queue and response matching</span>
+<span class="n">request_queue</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+<span class="n">response_handlers</span> <span class="o">=</span> <span class="p">{}</span>
+</code></pre>
+<p><strong>Rejected</strong>: Added complexity without significant benefits over Future-based approach.</p>
+<h3 id="alternative-2-per-request-transport-instances">Alternative 2: Per-Request Transport Instances</h3>
+<pre><code class="language-python"><span class="c1"># Create new transport connection per request</span>
+<span class="n">transport</span> <span class="o">=</span> <span class="n">create_transport_for_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+</code></pre>
+<p><strong>Rejected</strong>: Resource-intensive and doesn't leverage existing connection multiplexing.</p>
+<h3 id="alternative-3-request-batching">Alternative 3: Request Batching</h3>
+<pre><code class="language-python"><span class="c1"># Batch multiple requests into single upstream call</span>
+<span class="n">batch</span> <span class="o">=</span> <span class="k">await</span> <span class="n">collect_requests</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
+<span class="n">responses</span> <span class="o">=</span> <span class="k">await</span> <span class="n">send_batch</span><span class="p">(</span><span class="n">batch</span><span class="p">)</span>
+</code></pre>
+<p><strong>Rejected</strong>: Requires upstream server batch support and adds latency for single requests.</p>
+<h2 id="migration-strategy">Migration Strategy</h2>
+<p>This is a <strong>non-breaking change</strong>:</p>
+<ul>
+<li>Existing <code>send_message</code> and <code>receive_message</code> methods remain available</li>
+<li>New <code>send_and_receive</code> method provides enhanced functionality</li>
+<li>Automatic fallback for transports not implementing new method</li>
+<li>All existing tests continue to pass</li>
+</ul>
+<h2 id="testing-strategy">Testing Strategy</h2>
+<p>Comprehensive test coverage with 8 test scenarios:</p>
+<ol>
+<li>Basic concurrent functionality (10 requests)</li>
+<li>Medium load testing (50 requests)</li>
+<li>High load stress testing (100 requests)</li>
+<li>Request/response correlation verification</li>
+<li>Plugin state isolation under concurrency</li>
+<li>Resource cleanup validation</li>
+<li>Error handling under concurrent load</li>
+<li>Concurrent request limit enforcement</li>
+</ol>
+<h2 id="configuration">Configuration</h2>
+<p>No configuration changes required - the feature works with existing configurations:</p>
+<ul>
+<li>Default concurrent limit: 100 requests</li>
+<li>Limits can be adjusted programmatically if needed</li>
+<li>Future enhancement: YAML configuration for limits</li>
+</ul>
+<h2 id="future-enhancements">Future Enhancements</h2>
+<ol>
+<li><strong>Configurable Limits</strong>: YAML configuration for concurrent request limits</li>
+<li><strong>Request Prioritization</strong>: Priority queues for different request types</li>
+<li><strong>Advanced Batching</strong>: Optional request batching for supporting servers</li>
+<li><strong>Monitoring Integration</strong>: Metrics and observability for concurrent operations</li>
+<li><strong>Adaptive Limits</strong>: Dynamic adjustment based on server performance</li>
+</ol>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Massive Performance Gains</strong>: 5-250x improvement for concurrent workloads</li>
+<li><strong>Better Resource Utilization</strong>: Leverages upstream server concurrency</li>
+<li><strong>Maintained Compatibility</strong>: No breaking changes to existing APIs</li>
+<li><strong>Robust Error Handling</strong>: Proper cleanup and error propagation</li>
+<li><strong>Production Ready</strong>: Comprehensive testing and resource management</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Increased Complexity</strong>: More sophisticated request correlation logic</li>
+<li><strong>Memory Usage</strong>: Additional Future objects for pending requests</li>
+<li><strong>Debugging Complexity</strong>: Concurrent operations can be harder to trace</li>
+</ul>
+<h3 id="neutral">Neutral</h3>
+<ul>
+<li><strong>No Configuration Impact</strong>: Works with existing configurations</li>
+<li><strong>Transparent to Plugins</strong>: Plugin interfaces unchanged</li>
+<li><strong>Backward Compatible</strong>: Existing code continues to work</li>
+</ul>
+<h2 id="decision-rationale">Decision Rationale</h2>
+<p>The concurrent request handling implementation was chosen because:</p>
+<ol>
+<li><strong>Significant Performance Gains</strong>: Up to 250x improvement for concurrent scenarios</li>
+<li><strong>Maintains Compatibility</strong>: No breaking changes to existing APIs</li>
+<li><strong>Production Ready</strong>: Comprehensive testing and error handling</li>
+<li><strong>Leverages Existing Architecture</strong>: Builds on async-first design principles</li>
+<li><strong>Future-Proof</strong>: Enables advanced features like batching and prioritization</li>
+</ol>
+<p>This enhancement directly addresses the scalability requirements for production deployments while maintaining the reliability and simplicity that are core to Gatekit's design philosophy.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

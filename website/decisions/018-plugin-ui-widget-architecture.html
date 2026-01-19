@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-018: Plugin UI Widget Architecture - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit's TUI needs two distinct mechanisms for plugin UI integration:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-018-plugin-ui-widget-architecture">ADR-018: Plugin UI Widget Architecture</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit's TUI needs two distinct mechanisms for plugin UI integration:</p>
+<ol>
+<li><strong>Main Screen Display</strong>: Datatable showing all available plugins (enabled/disabled) with status summaries</li>
+<li><strong>Configuration Screens</strong>: Complex forms for detailed plugin configuration</li>
+</ol>
+<h3 id="main-screen-requirements">Main Screen Requirements:</h3>
+<ul>
+<li>Display ALL available plugins from HANDLERS manifests (even disabled ones)</li>
+<li>Show status without requiring instantiation (config-driven display)</li>
+<li>Structured datatable with specific columns: enabled checkbox, name, status description, action buttons</li>
+<li>Work uniformly for built-in and user plugins</li>
+</ul>
+<h3 id="configuration-screen-requirements">Configuration Screen Requirements:</h3>
+<ul>
+<li><strong>Security plugins</strong> need complex UIs (PII types, detection actions)</li>
+<li><strong>Auditing plugins</strong> need file management, formatting options, connection settings</li>
+<li><strong>Server-specific plugins</strong> need context about available tools and server capabilities</li>
+<li><strong>Different plugin types</strong> have fundamentally different configuration needs</li>
+</ul>
+<p>We need a solution that:</p>
+<ul>
+<li>Provides structured data for datatable display while maintaining flexibility for configuration</li>
+<li>Gives plugin authors maximum flexibility for their detailed configuration UI</li>
+<li>Avoids forcing all plugins into a generic configuration schema</li>
+<li>Allows plugins to leverage the full power of Textual widgets</li>
+<li>Maintains consistency with Gatekit's TUI experience</li>
+<li>Works with optional Textual dependency (graceful fallback)</li>
+<li>Respects the elegant simplicity of the HANDLERS manifest system</li>
+</ul>
+<h2 id="decision">Decision</h2>
+<p><strong>Plugins provide both structured display metadata AND their own Textual widgets for TUI integration.</strong></p>
+<p>This dual approach addresses both requirements:</p>
+<ol>
+<li><strong>Class-level display metadata</strong> for main screen datatable (no instantiation required)</li>
+<li><strong>Instance-level configuration widgets</strong> for detailed configuration screens</li>
+</ol>
+<h3 id="display-metadata-contract">Display Metadata Contract</h3>
+<p>All plugins that want TUI display must provide class-level attributes:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">MyPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+    <span class="c1"># Required display metadata</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;My Plugin&quot;</span>         <span class="c1"># Human-readable name</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span>           <span class="c1"># &quot;global&quot;, &quot;server_aware&quot;, or &quot;server_specific&quot;</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">describe_status</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate status description from configuration.</span>
+<span class="sd">        </span>
+<span class="sd">        Called by TUI to populate the status column. Must work</span>
+<span class="sd">        without plugin instantiation. Config may be empty for</span>
+<span class="sd">        disabled plugins.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            config: Current plugin configuration dict (may be empty)</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            Status string for display (e.g. &quot;Blocking: API Keys, Tokens&quot;)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+    
+    <span class="nd">@classmethod</span>  
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_display_actions</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return available UI actions based on configuration state.</span>
+<span class="sd">        </span>
+<span class="sd">        Args:</span>
+<span class="sd">            config: Current plugin configuration dict (may be empty)</span>
+<span class="sd">            </span>
+<span class="sd">        Returns:</span>
+<span class="sd">            List of action strings (e.g. [&quot;Configure&quot;, &quot;Test&quot;])</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+</code></pre>
+<h3 id="configuration-widget-contract">Configuration Widget Contract</h3>
+<p>Plugins that want detailed TUI configuration must implement:</p>
+<pre><code class="language-python"><span class="nd">@classmethod</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_config_widget</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">current_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return a Textual widget for configuration.</span>
+<span class="sd">    </span>
+<span class="sd">    Args:</span>
+<span class="sd">        current_config: Current configuration dict for this plugin</span>
+<span class="sd">        context: Optional context (server_name, available_tools, etc.)</span>
+<span class="sd">        </span>
+<span class="sd">    Returns:</span>
+<span class="sd">        A Textual widget that implements get_config() method</span>
+<span class="sd">        Or None if plugin doesn&#39;t support TUI configuration</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+</code></pre>
+<p>The returned widget MUST implement:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">get_config</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract configuration from widget state.&quot;&quot;&quot;</span>
+</code></pre>
+<h3 id="complete-implementation-pattern">Complete Implementation Pattern</h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.plugins.interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">SecurityPlugin</span><span class="p">,</span> <span class="n">PluginResult</span>
+
+<span class="c1"># Import Textual only when needed</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">textual.app</span><span class="w"> </span><span class="kn">import</span> <span class="n">ComposeResult</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">textual.containers</span><span class="w"> </span><span class="kn">import</span> <span class="n">Container</span><span class="p">,</span> <span class="n">Vertical</span><span class="p">,</span> <span class="n">Horizontal</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">textual.widgets</span><span class="w"> </span><span class="kn">import</span> <span class="n">Static</span><span class="p">,</span> <span class="n">RadioSet</span><span class="p">,</span> <span class="n">Checkbox</span>
+    <span class="n">HAS_TEXTUAL</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">HAS_TEXTUAL</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Complete plugin with both display metadata and configuration widget.&quot;&quot;&quot;</span>
+    
+    <span class="c1"># ========== Display Metadata (Required for TUI) ==========</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;My Security Plugin&quot;</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span>  <span class="c1"># Can appear in global security section</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">describe_status</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate status description from configuration.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;Click to enable security filtering&quot;</span> 
+        
+        <span class="c1"># Build description from config</span>
+        <span class="n">action</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="s2">&quot;block&quot;</span><span class="p">)</span>
+        <span class="n">rules_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rules&quot;</span><span class="p">,</span> <span class="p">[]))</span>
+        
+        <span class="k">if</span> <span class="n">rules_count</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;No rules configured&quot;</span>
+        <span class="k">elif</span> <span class="n">rules_count</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">action</span><span class="o">.</span><span class="n">title</span><span class="p">()</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">rules_count</span><span class="si">}</span><span class="s2"> rule active&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">action</span><span class="o">.</span><span class="n">title</span><span class="p">()</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">rules_count</span><span class="si">}</span><span class="s2"> rules active&quot;</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_display_actions</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return available UI actions.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">config</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Configure&quot;</span><span class="p">,</span> <span class="s2">&quot;Test&quot;</span><span class="p">]</span> 
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Setup&quot;</span><span class="p">]</span>
+    
+    <span class="c1"># ========== Core Plugin Logic (Unchanged) ==========</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initialize plugin - only called when enabled.&quot;&quot;&quot;</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;action&quot;</span><span class="p">]</span>
+        <span class="c1"># ... rest of plugin initialization</span>
+    
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Core security logic - unchanged.&quot;&quot;&quot;</span>
+        <span class="c1"># ... existing security implementation</span>
+        <span class="k">pass</span>
+    
+    <span class="c1"># ========== TUI Configuration Widget (Optional) ==========</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_config_widget</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">current_config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return widget for detailed configuration.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">HAS_TEXTUAL</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">MyConfigWidget</span><span class="p">(</span><span class="n">current_config</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+    
+    <span class="c1"># Define widget as inner class</span>
+    <span class="k">if</span> <span class="n">HAS_TEXTUAL</span><span class="p">:</span>
+        <span class="k">class</span><span class="w"> </span><span class="nc">MyConfigWidget</span><span class="p">(</span><span class="n">Container</span><span class="p">):</span>
+<span class="w">            </span><span class="sd">&quot;&quot;&quot;TUI configuration widget.&quot;&quot;&quot;</span>
+            
+            <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">context</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+                <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="p">{}</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">context</span> <span class="o">=</span> <span class="n">context</span> <span class="ow">or</span> <span class="p">{}</span>
+            
+            <span class="k">def</span><span class="w"> </span><span class="nf">compose</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ComposeResult</span><span class="p">:</span>
+<span class="w">                </span><span class="sd">&quot;&quot;&quot;Plugin authors have complete control over layout.&quot;&quot;&quot;</span>
+                <span class="c1"># Use any Textual widgets, custom layouts, styling, etc.</span>
+                <span class="k">pass</span>
+            
+            <span class="k">def</span><span class="w"> </span><span class="nf">get_config</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">                </span><span class="sd">&quot;&quot;&quot;Extract config from widget state.&quot;&quot;&quot;</span>
+                <span class="c1"># Plugin handles their own config extraction</span>
+                <span class="k">return</span> <span class="p">{}</span>
+
+<span class="c1"># HANDLERS manifest stays simple</span>
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;my_plugin&quot;</span><span class="p">:</span> <span class="n">MyPlugin</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="tui-integration">TUI Integration</h3>
+<p><strong>Main Screen Datatable Population:</strong></p>
+<pre><code class="language-python"><span class="c1"># Populate global plugins datatable</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">populate_global_plugins</span><span class="p">():</span>
+    <span class="k">for</span> <span class="n">plugin_module</span> <span class="ow">in</span> <span class="n">discover_plugin_modules</span><span class="p">():</span>
+        <span class="k">for</span> <span class="n">handler_name</span><span class="p">,</span> <span class="n">plugin_class</span> <span class="ow">in</span> <span class="n">plugin_module</span><span class="o">.</span><span class="n">HANDLERS</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="c1"># Check if plugin should appear in global sections</span>
+            <span class="n">scope</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">plugin_class</span><span class="p">,</span> <span class="s1">&#39;DISPLAY_SCOPE&#39;</span><span class="p">,</span> <span class="s1">&#39;server&#39;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">scope</span> <span class="o">==</span> <span class="s1">&#39;global&#39;</span><span class="p">:</span>
+                <span class="c1"># Get current config (may be empty for disabled plugins)</span>
+                <span class="n">config</span> <span class="o">=</span> <span class="n">get_plugin_config</span><span class="p">(</span><span class="s1">&#39;_global&#39;</span><span class="p">,</span> <span class="n">handler_name</span><span class="p">)</span>
+                
+                <span class="c1"># Get display data without instantiation</span>
+                <span class="n">name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">plugin_class</span><span class="p">,</span> <span class="s1">&#39;DISPLAY_NAME&#39;</span><span class="p">,</span> <span class="n">handler_name</span><span class="p">)</span>
+                <span class="n">status</span> <span class="o">=</span> <span class="n">plugin_class</span><span class="o">.</span><span class="n">describe_status</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+                <span class="n">actions</span> <span class="o">=</span> <span class="n">plugin_class</span><span class="o">.</span><span class="n">get_display_actions</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+                <span class="n">enabled</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;enabled&#39;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span> <span class="k">if</span> <span class="n">config</span> <span class="k">else</span> <span class="kc">False</span>
+                
+                <span class="c1"># Add row to datatable</span>
+                <span class="n">add_plugin_row</span><span class="p">(</span><span class="n">enabled</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">actions</span><span class="p">)</span>
+</code></pre>
+<p><strong>Configuration Screen Widget Mounting:</strong></p>
+<pre><code class="language-python"><span class="c1"># Mount plugin configuration widget</span>
+<span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">plugin_class</span><span class="p">,</span> <span class="s1">&#39;get_config_widget&#39;</span><span class="p">):</span>
+    <span class="n">widget</span> <span class="o">=</span> <span class="n">plugin_class</span><span class="o">.</span><span class="n">get_config_widget</span><span class="p">(</span><span class="n">current_config</span><span class="p">,</span> <span class="n">context</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">widget</span><span class="p">:</span>
+        <span class="c1"># Mount the plugin&#39;s widget directly</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">mount</span><span class="p">(</span><span class="n">widget</span><span class="p">)</span>
+        <span class="k">return</span>
+
+<span class="c1"># Plugin doesn&#39;t support TUI configuration</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">mount</span><span class="p">(</span><span class="n">Static</span><span class="p">(</span><span class="s2">&quot;Plugin doesn&#39;t provide TUI configuration&quot;</span><span class="p">))</span>
+</code></pre>
+<h2 id="real-world-examples">Real-World Examples</h2>
+<h3 id="security-plugin-pii-filter">Security Plugin: PII Filter</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">BasicPIIFilterPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;PII filtering with realistic display metadata.&quot;&quot;&quot;</span>
+    
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;PII Filter&quot;</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">describe_status</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generate description from PII filter configuration.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;Click to enable PII protection&quot;</span>
+        
+        <span class="n">action</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="s2">&quot;redact&quot;</span><span class="p">)</span>
+        <span class="n">pii_types</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;pii_types&quot;</span><span class="p">,</span> <span class="p">{})</span>
+        
+        <span class="c1"># Count enabled PII types</span>
+        <span class="n">enabled</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">pii_types</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;email&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">enabled</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Email&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pii_types</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;phone&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">enabled</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;Phone&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">pii_types</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;ssn&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">enabled</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;SSN&quot;</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">enabled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;No PII types configured&quot;</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">3</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">action</span><span class="o">.</span><span class="n">title</span><span class="p">()</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">action</span><span class="o">.</span><span class="n">title</span><span class="p">()</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">enabled</span><span class="p">)</span><span class="si">}</span><span class="s2"> PII types&quot;</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_display_actions</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return actions based on configuration state.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">config</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Configure&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Setup&quot;</span><span class="p">]</span>
+
+<span class="c1"># Core plugin logic unchanged...</span>
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;pii&quot;</span><span class="p">:</span> <span class="n">BasicPIIFilterPlugin</span><span class="p">}</span>
+</code></pre>
+<h3 id="auditing-plugin-json-logger">Auditing Plugin: JSON Logger</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">JsonAuditingPlugin</span><span class="p">(</span><span class="n">AuditingPlugin</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;JSON audit logging with file status display.&quot;&quot;&quot;</span>
+    
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;JSON Logger&quot;</span>
+    <span class="c1"># Note: AuditingPlugin subclasses don&#39;t use DISPLAY_SCOPE</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">describe_status</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Show output file and status.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;Export audit logs to JSON format&quot;</span>
+        
+        <span class="n">output_file</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;output_file&quot;</span><span class="p">,</span> <span class="s2">&quot;audit.json&quot;</span><span class="p">)</span>
+        
+        <span class="c1"># Check if file exists and get size (if available)</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+        <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">output_file</span><span class="p">):</span>
+            <span class="n">size_mb</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">getsize</span><span class="p">(</span><span class="n">output_file</span><span class="p">)</span> <span class="o">/</span> <span class="mi">1_048_576</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">output_file</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">size_mb</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2">MB today)&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">output_file</span><span class="si">}</span><span class="s2"> (not created yet)&quot;</span>
+    
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_display_actions</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return actions with log viewing capability.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">config</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="n">output_file</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;output_file&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">output_file</span><span class="p">):</span>
+                <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;View Logs&quot;</span><span class="p">,</span> <span class="s2">&quot;Configure&quot;</span><span class="p">]</span>
+            <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Configure&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Setup&quot;</span><span class="p">]</span>
+
+<span class="c1"># Core plugin logic unchanged...</span>
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;json_auditing&quot;</span><span class="p">:</span> <span class="n">JsonAuditingPlugin</span><span class="p">}</span>
+</code></pre>
+<h3 id="server-specific-plugin-tool-manager">Server-Specific Plugin: Tool Manager</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">ToolManagerPlugin</span><span class="p">(</span><span class="n">MiddlewarePlugin</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tool manager with server-specific display.&quot;&quot;&quot;</span>
+
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;Tool Manager&quot;</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;server_aware&quot;</span>  <span class="c1"># Requires per-server configuration</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">describe_status</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Show tool configuration summary.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span> <span class="s2">&quot;Control tool visibility and execution&quot;</span>
+
+        <span class="n">tools</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tools&quot;</span><span class="p">,</span> <span class="p">[])</span>
+
+        <span class="c1"># Count configured tools (implicit allowlist - tools in list are allowed)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">tools</span><span class="p">:</span>
+            <span class="k">return</span> <span class="s2">&quot;No tools configured&quot;</span>
+
+        <span class="n">tool_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">tools</span><span class="p">)</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Allow </span><span class="si">{</span><span class="n">tool_count</span><span class="si">}</span><span class="s2"> tool</span><span class="si">{</span><span class="s1">&#39;s&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">tool_count</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;&#39;</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_display_actions</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Context-aware actions.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">config</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Configure&quot;</span><span class="p">,</span> <span class="s2">&quot;Test&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Setup&quot;</span><span class="p">]</span>
+
+<span class="c1"># Core plugin logic unchanged...</span>
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;tool_manager&quot;</span><span class="p">:</span> <span class="n">ToolManagerPlugin</span><span class="p">}</span>
+</code></pre>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="1-schema-based-configuration">1. Schema-Based Configuration</h3>
+<p><strong>Approach:</strong> Plugins declare configuration schemas, TUI generates forms automatically.</p>
+<p><strong>Rejected because:</strong></p>
+<ul>
+<li>Forces all plugins into generic form patterns</li>
+<li>Cannot handle complex UI needs (grouped checkboxes, dynamic layouts)</li>
+<li>Requires maintaining schema language and form generator</li>
+<li>Plugin authors lose control over user experience</li>
+</ul>
+<h3 id="2-abstraction-layer">2. Abstraction Layer</h3>
+<p><strong>Approach:</strong> Create intermediate widgets (ConfigSection, ConfigGroup) that plugins compose.</p>
+<p><strong>Rejected because:</strong></p>
+<ul>
+<li>Adds unnecessary complexity and learning curve</li>
+<li>Limits plugin authors to our predefined widget types</li>
+<li>Still requires maintaining abstraction layer code</li>
+<li>Textual already provides excellent primitive widgets</li>
+</ul>
+<h3 id="3-external-configuration-tools">3. External Configuration Tools</h3>
+<p><strong>Approach:</strong> Launch external editors or web interfaces for plugin configuration.</p>
+<p><strong>Rejected because:</strong></p>
+<ul>
+<li>Breaks unified TUI experience</li>
+<li>Adds complexity for deployment and dependencies</li>
+<li>Poor user experience (context switching)</li>
+<li>Difficult to integrate with live configuration updates</li>
+</ul>
+<h3 id="4-yaml-only-configuration">4. YAML-Only Configuration</h3>
+<p><strong>Approach:</strong> Require all plugin configuration via YAML files.</p>
+<p><strong>Rejected because:</strong></p>
+<ul>
+<li>Poor user experience for complex configurations</li>
+<li>No validation feedback or guided setup</li>
+<li>Difficult to discover available options</li>
+<li>No integration with server context (available tools, etc.)</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<p><strong>Display Metadata Benefits:</strong></p>
+<ul>
+<li><strong>Structured data</strong> - TUI gets exactly the datatable columns it needs</li>
+<li><strong>No instantiation required</strong> - Works for both enabled and disabled plugins</li>
+<li><strong>Config-driven display</strong> - Status reflects actual configuration state</li>
+<li><strong>Minimal plugin burden</strong> - Simple class attributes and methods</li>
+<li><strong>Uniform treatment</strong> - All plugins work identically for TUI integration</li>
+</ul>
+<p><strong>Configuration Widget Benefits:</strong></p>
+<ul>
+<li><strong>Maximum flexibility</strong> - Plugin authors use Textual however they want for detailed config</li>
+<li><strong>Single file approach</strong> - All code (logic + display + UI) in one place</li>
+<li><strong>No abstraction overhead</strong> - Direct use of Textual widgets</li>
+<li><strong>Future-proof</strong> - As Textual evolves, plugins can use new features immediately</li>
+<li><strong>Context-aware</strong> - Plugins receive server context for intelligent UIs</li>
+</ul>
+<p><strong>Overall Benefits:</strong></p>
+<ul>
+<li><strong>Equal treatment</strong> - Built-in plugins follow same rules as user plugins</li>
+<li><strong>Graceful fallback</strong> - Works without Textual installed</li>
+<li><strong>Respects HANDLERS</strong> - Works perfectly with existing plugin discovery system</li>
+<li><strong>Separation of concerns</strong> - Display metadata vs. detailed configuration widgets</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<p><strong>Display Metadata Limitations:</strong></p>
+<ul>
+<li><strong>Additional methods required</strong> - Plugin authors must implement <code>describe_status()</code> and <code>get_display_actions()</code></li>
+<li><strong>Config parsing complexity</strong> - Status generation requires understanding config structure</li>
+<li><strong>Static class attributes</strong> - Less dynamic than instance-based approaches</li>
+</ul>
+<p><strong>Configuration Widget Limitations:</strong></p>
+<ul>
+<li><strong>Learning curve</strong> - Plugin authors must learn Textual for detailed configuration</li>
+<li><strong>Code duplication</strong> - Similar UI patterns may be repeated across plugins</li>
+<li><strong>Testing complexity</strong> - Plugin authors must test their UI components</li>
+<li><strong>Textual dependency</strong> - Optional but required for TUI configuration features</li>
+</ul>
+<h3 id="mitigations">Mitigations</h3>
+<p><strong>For Display Metadata:</strong></p>
+<ul>
+<li>Provide clear examples and templates for common plugin types</li>
+<li>Default implementations for simple cases</li>
+<li>Configuration parsing utilities for common patterns</li>
+<li>Comprehensive testing of display methods</li>
+</ul>
+<p><strong>For Configuration Widgets:</strong></p>
+<ul>
+<li>Comprehensive examples and documentation for Textual patterns</li>
+<li>Include common UI patterns in documentation</li>
+<li>Make Textual dependency optional with clear fallback behavior</li>
+<li>Ensure core plugin functionality works without UI components</li>
+</ul>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<h3 id="display-metadata-requirements">Display Metadata Requirements</h3>
+<ul>
+<li><code>DISPLAY_NAME</code> must be a human-readable string suitable for datatable display</li>
+<li><code>DISPLAY_SCOPE</code> (SecurityPlugin only) must be one of: <code>&quot;global&quot;</code>, <code>&quot;server_aware&quot;</code>, or <code>&quot;server_specific&quot;</code><ul>
+<li>AuditingPlugin subclasses don't use DISPLAY_SCOPE - they always appear in global sections</li>
+</ul>
+</li>
+<li><code>describe_status()</code> must handle empty/missing config gracefully</li>
+<li><code>get_display_actions()</code> should return 1-3 action strings maximum for UI space constraints</li>
+</ul>
+<h3 id="configuration-widget-context-parameter">Configuration Widget Context Parameter</h3>
+<p>The <code>context</code> parameter in <code>get_config_widget()</code> allows plugins to receive relevant information:</p>
+<ul>
+<li><code>server_name</code>: For server-specific plugins</li>
+<li><code>available_tools</code>: For tool-related security plugins</li>
+<li><code>upstream_config</code>: Server configuration details</li>
+<li><code>capabilities</code>: Server capabilities from MCP discovery</li>
+</ul>
+<h3 id="error-handling">Error Handling</h3>
+<p><strong>Display Metadata:</strong></p>
+<ul>
+<li>Missing <code>DISPLAY_NAME</code> defaults to handler name from HANDLERS</li>
+<li>Missing <code>DISPLAY_SCOPE</code> defaults to <code>&quot;global&quot;</code></li>
+<li>Exceptions in <code>describe_status()</code> show &quot;Error loading status&quot;</li>
+<li>Exceptions in <code>get_display_actions()</code> default to <code>[&quot;Configure&quot;]</code></li>
+</ul>
+<p><strong>Configuration Widgets:</strong></p>
+<ul>
+<li>If <code>get_config_widget()</code> raises an exception, treat as &quot;no TUI support&quot;</li>
+<li>If returned widget doesn't implement <code>get_config()</code>, show error message</li>
+<li>Invalid configuration from <code>get_config()</code> should be handled gracefully</li>
+</ul>
+<h3 id="testing-strategy">Testing Strategy</h3>
+<p><strong>Display Metadata Testing:</strong></p>
+<ul>
+<li>Unit test <code>describe_status()</code> with various config scenarios (empty, disabled, various settings)</li>
+<li>Unit test <code>get_display_actions()</code> with different configuration states</li>
+<li>Integration test that display metadata populates datatables correctly</li>
+</ul>
+<p><strong>Configuration Widget Testing:</strong></p>
+<ul>
+<li>Plugin UI components should be unit tested independently</li>
+<li>TUI integration tests verify widget mounting and config extraction</li>
+<li>Manual testing for complex UI interactions</li>
+</ul>
+<h2 id="plugin-configuration-behavior">Plugin Configuration Behavior</h2>
+<p>This section documents how plugin configurations are resolved and applied across upstream servers, which directly impacts plugin display in the TUI.</p>
+<h3 id="configuration-resolution-rules">Configuration Resolution Rules</h3>
+<p>Gatekit uses an upstream-scoped configuration system where plugins can be configured globally (<code>_global</code>) or per-server. The resolution algorithm is:</p>
+<ol>
+<li><strong>Start with global plugins</strong>: Copy all plugins from <code>_global</code> section</li>
+<li><strong>Add server-specific plugins</strong>: For each plugin in the server's section:<ul>
+<li>If a plugin with the same handler name exists from global, <strong>replace it</strong> (override)</li>
+<li>If no matching global plugin exists, <strong>add it</strong> (augment)</li>
+</ul>
+</li>
+<li><strong>Sort by priority</strong>: Order final plugin list by priority (lower numbers = higher priority)</li>
+</ol>
+<p><strong>Example Configuration:</strong></p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span><span class="p p-Indicator">}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;secrets_detection&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="nt">filesystem</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span><span class="w">    </span><span class="c1"># Override global pii</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;block&quot;</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">filesystem</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">        </span><span class="c1"># Server-aware middleware</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span>
+
+<span class="c1"># Result for &#39;filesystem&#39; server:</span>
+<span class="c1"># 1. basic_pii_filter with action: &quot;block&quot; (overridden from global)</span>
+<span class="c1"># 2. secrets_detection with action: &quot;redact&quot; (inherited from global)</span>
+<span class="c1"># 3. tool_manager with configured tools (server-specific middleware)</span>
+</code></pre>
+<h3 id="plugin-scope-restrictions">Plugin Scope Restrictions</h3>
+<p>Plugin scope categories determine where plugins can be meaningfully configured:</p>
+<p><strong>Global Scope Plugins</strong> (<code>DISPLAY_SCOPE = &quot;global&quot;</code>):</p>
+<ul>
+<li>✅ Can be configured in <code>_global</code> section</li>
+<li>✅ Can be configured in server sections</li>
+<li>✅ Can use mixed global + override pattern</li>
+<li>Examples: <code>pii</code>, <code>secrets</code>, <code>prompt_injection</code>, all auditing plugins</li>
+</ul>
+<p><strong>Server-Aware Scope Plugins</strong> (<code>DISPLAY_SCOPE = &quot;server_aware&quot;</code>):</p>
+<ul>
+<li>❌ CANNOT be configured in <code>_global</code> section</li>
+<li>✅ Can be configured in server sections</li>
+<li>Examples: <code>tool_manager</code> (needs per-server tool names)</li>
+</ul>
+<p><strong>Server-Specific Scope Plugins</strong> (<code>DISPLAY_SCOPE = &quot;server_specific&quot;</code>):</p>
+<ul>
+<li>❌ CANNOT be configured in <code>_global</code> section</li>
+<li>✅ Can be configured in compatible server sections only</li>
+<li>Examples: <code>filesystem_server</code> (only for filesystem servers)</li>
+</ul>
+<h3 id="validation-rules">Validation Rules</h3>
+<p>The configuration validation enforces these rules:</p>
+<ul>
+<li>Server-aware and server-specific plugins in <code>_global</code> sections generate validation errors</li>
+<li>Plugin references to unknown servers generate validation errors</li>
+<li>Server-specific plugins in incompatible server sections generate validation errors</li>
+</ul>
+<h3 id="tui-display-implications">TUI Display Implications</h3>
+<p>This configuration behavior directly impacts plugin display in the TUI:</p>
+<p><strong>Global Security Section:</strong></p>
+<ul>
+<li>Shows only <code>DISPLAY_SCOPE = &quot;global&quot;</code> plugins</li>
+<li>Status should reflect which servers the plugin is enabled on</li>
+<li>Example: &quot;PII Filter ✅ Enabled on 2/3 servers&quot;</li>
+</ul>
+<p><strong>Server Security Sections:</strong></p>
+<ul>
+<li>Shows <code>DISPLAY_SCOPE = &quot;global&quot;</code>, <code>&quot;server_aware&quot;</code>, and compatible <code>&quot;server_specific&quot;</code> plugins</li>
+<li>Status should indicate configuration source</li>
+<li>Examples:<ul>
+<li>&quot;PII Filter ✅ Enabled (from global config)&quot;</li>
+<li>&quot;PII Filter ✅ Block (overrides global redact)&quot;</li>
+<li>&quot;Tool Manager ✅ Allow 5 tools&quot;</li>
+</ul>
+</li>
+</ul>
+<p><strong>Global Auditing Section:</strong></p>
+<ul>
+<li>Shows all auditing plugins (they don't use DISPLAY_SCOPE)</li>
+<li>Typically configured globally for consistent audit trails</li>
+<li>Server-specific auditing configurations are supported but less common</li>
+</ul>
+<h3 id="plugin-configuration-patterns">Plugin Configuration Patterns</h3>
+<p>The configuration system supports three main patterns:</p>
+<ol>
+<li><strong>Global-Only</strong>: Same policies for all servers (simple deployments)</li>
+<li><strong>Server-Specific Only</strong>: Independent policies per server (maximum control)</li>
+<li><strong>Mixed Global + Override</strong>: Global defaults with targeted server overrides (balanced approach)</li>
+</ol>
+<p>Plugin display metadata methods (<code>describe_status()</code>, <code>get_display_actions()</code>) should handle all these patterns appropriately and provide meaningful status descriptions that reflect the actual effective configuration for each plugin-server combination.</p>
+<h2 id="references">References</h2>
+<ul>
+<li>Textual Documentation: https://textual.textualize.io/</li>
+<li>Plugin Interface Definition: <code>gatekit/plugins/interfaces.py</code></li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

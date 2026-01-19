@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gatekit Routing Model - Gatekit Documentation</title>
+  <meta name="description" content="1. [Core Concepts](#core-concepts) 2. [Namespacing Requirements](#namespacing-requirements) 3. [Request Flow](#request-flow) 4. [Routing Components](#routing...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../docs/getting-started.html">Get started</a>
+        <a href="../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html" class="active">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="gatekit-routing-model">Gatekit Routing Model</h1>
+<p><strong>Version</strong>: 0.1.0<br />
+<strong>Status</strong>: Authoritative Reference</p>
+<blockquote>
+<p><strong>Note</strong>: This document describes the ACTUAL behavior of the Gatekit routing model as implemented. It serves as the single source of truth for routing and namespacing decisions.</p>
+</blockquote>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#core-concepts">Core Concepts</a></li>
+<li><a href="#namespacing-requirements">Namespacing Requirements</a></li>
+<li><a href="#request-flow">Request Flow</a></li>
+<li><a href="#routing-components">Routing Components</a></li>
+<li><a href="#boundary-translation-pattern">Boundary Translation Pattern</a></li>
+<li><a href="#error-handling">Error Handling</a></li>
+<li><a href="#multi-server-operations">Multi-Server Operations</a></li>
+<li><a href="#example-scenarios">Example Scenarios</a></li>
+</ol>
+<h2 id="core-concepts">Core Concepts</h2>
+<h3 id="purpose-of-routing">Purpose of Routing</h3>
+<p>Gatekit acts as a proxy between MCP clients (like Claude Code) and multiple upstream MCP servers. The routing system:</p>
+<ul>
+<li><strong>Directs requests</strong> to the appropriate upstream server</li>
+<li><strong>Maintains namespace isolation</strong> between servers</li>
+<li><strong>Preserves clean interfaces</strong> for internal processing</li>
+<li><strong>Enables per-server security policies</strong></li>
+</ul>
+<h3 id="namespace-format">Namespace Format</h3>
+<p>Tool calls use a double-underscore (<code>__</code>) separator:</p>
+<pre><code class="language-text"><span class="n">server__tool_name</span>
+</code></pre>
+<p>Examples:</p>
+<ul>
+<li><code>filesystem__read_file</code> - Routes the <code>read_file</code> tool to the <code>filesystem</code> server</li>
+<li><code>github__create_issue</code> - Routes the <code>create_issue</code> tool to the <code>github</code> server</li>
+<li><code>puppeteer__screenshot</code> - Routes the <code>screenshot</code> tool to the <code>puppeteer</code> server</li>
+</ul>
+<h3 id="key-principles">Key Principles</h3>
+<ol>
+<li><strong>No Single-Server Special Cases</strong>: ALL tool calls must be namespaced, even with one server</li>
+<li><strong>Parse Once at Ingress</strong>: Namespace extraction happens exactly once when the request enters</li>
+<li><strong>Clean Internal Representation</strong>: All internal processing uses denamespaced tool names</li>
+<li><strong>Restore at Egress</strong>: Namespacing is restored in error messages for the client</li>
+<li><strong>Preserved Context</strong>: Original namespaced names are preserved for error messages and auditing</li>
+</ol>
+<h2 id="namespacing-requirements">Namespacing Requirements</h2>
+<h3 id="tool-calls-require-namespacing">Tool Calls Require Namespacing</h3>
+<p>The <code>tools/call</code> method <strong>MUST</strong> include a server namespace:</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;server__tool_name&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="broadcast-methods-no-namespacing">Broadcast Methods (No Namespacing)</h3>
+<p>These methods are sent to ALL servers without namespacing:</p>
+<table>
+<thead>
+<tr>
+  <th>Method</th>
+  <th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>initialize</code></td>
+  <td>Sent to all servers for protocol handshake</td>
+</tr>
+<tr>
+  <td><code>tools/list</code></td>
+  <td>Aggregated from all servers with namespacing applied</td>
+</tr>
+<tr>
+  <td><code>resources/list</code></td>
+  <td>Aggregated from all servers (experimental)</td>
+</tr>
+<tr>
+  <td><code>prompts/list</code></td>
+  <td>Aggregated from all servers (experimental)</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Note</strong>: Gatekit v0.1.0 focuses on <strong>tool management</strong>. Resources and prompts have basic aggregation support but are <strong>experimental and untested</strong>. Use at your own risk.</p>
+</blockquote>
+<h3 id="invalid-namespace-errors">Invalid Namespace Errors</h3>
+<p>Requests without proper namespacing receive JSON-RPC error responses:</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;jsonrpc&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request-id&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">-32602</span><span class="p">,</span><span class="w">  </span><span class="c1">// Invalid params</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tool &#39;my_tool&#39; is not properly namespaced. All tool calls must use &#39;server__tool&#39; format&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<h2 id="request-flow">Request Flow</h2>
+<h3 id="1-client-request-arrives">1. Client Request Arrives</h3>
+<pre><code class="language-python"><span class="c1"># Client sends namespaced request</span>
+<span class="p">{</span>
+  <span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;filesystem__read_file&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="p">{</span><span class="o">...</span><span class="p">}}</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="2-parse-at-ingress-once">2. Parse at Ingress (Once)</h3>
+<pre><code class="language-python"><span class="c1"># parse_incoming_request() extracts namespace ONCE</span>
+<span class="n">routed</span> <span class="o">=</span> <span class="n">parse_incoming_request</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+<span class="c1"># Returns RoutedRequest with:</span>
+<span class="c1">#   - request: Clean MCPRequest with name=&quot;read_file&quot;</span>
+<span class="c1">#   - target_server: &quot;filesystem&quot;</span>
+<span class="c1">#   - namespaced_name: &quot;filesystem__read_file&quot; (preserved for errors)</span>
+</code></pre>
+<h3 id="3-plugin-processing-clean">3. Plugin Processing (Clean)</h3>
+<pre><code class="language-python"><span class="c1"># Plugins see CLEAN request without namespacing</span>
+<span class="n">pipeline</span> <span class="o">=</span> <span class="k">await</span> <span class="n">plugin_manager</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span>
+    <span class="n">routed</span><span class="o">.</span><span class="n">request</span><span class="p">,</span>  <span class="c1"># Clean: name=&quot;read_file&quot;</span>
+    <span class="n">routed</span><span class="o">.</span><span class="n">target_server</span>  <span class="c1"># &quot;filesystem&quot;</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="4-server-validation">4. Server Validation</h3>
+<pre><code class="language-python"><span class="c1"># AFTER plugins (allows future routing plugins)</span>
+<span class="k">if</span> <span class="n">routed</span><span class="o">.</span><span class="n">target_server</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_broadcast_method</span><span class="p">():</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">server_exists</span><span class="p">(</span><span class="n">routed</span><span class="o">.</span><span class="n">target_server</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">error_response</span><span class="p">(</span><span class="s2">&quot;Unknown server &#39;filesystem&#39;&quot;</span><span class="p">)</span>
+</code></pre>
+<h3 id="5-route-to-upstream">5. Route to Upstream</h3>
+<pre><code class="language-python"><span class="c1"># Send clean request to target server</span>
+<span class="n">response</span> <span class="o">=</span> <span class="k">await</span> <span class="n">route_request</span><span class="p">(</span><span class="n">routed</span><span class="p">)</span>
+<span class="c1"># Upstream sees: name=&quot;read_file&quot; (no namespace)</span>
+</code></pre>
+<h3 id="6-response-processing">6. Response Processing</h3>
+<pre><code class="language-python"><span class="c1"># Response plugins also see clean request</span>
+<span class="n">response_pipeline</span> <span class="o">=</span> <span class="k">await</span> <span class="n">plugin_manager</span><span class="o">.</span><span class="n">process_response</span><span class="p">(</span>
+    <span class="n">routed</span><span class="o">.</span><span class="n">request</span><span class="p">,</span>  <span class="c1"># Still clean</span>
+    <span class="n">response</span><span class="p">,</span>
+    <span class="n">routed</span><span class="o">.</span><span class="n">target_server</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="7-restore-at-egress">7. Restore at Egress</h3>
+<pre><code class="language-python"><span class="c1"># Re-namespace error messages for client</span>
+<span class="n">final</span> <span class="o">=</span> <span class="n">prepare_outgoing_response</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">routed</span><span class="p">)</span>
+<span class="c1"># Error: &quot;Tool read_file not found&quot; → &quot;Tool filesystem__read_file not found&quot;</span>
+</code></pre>
+<h2 id="routing-components">Routing Components</h2>
+<h3 id="routedrequest-data-structure">RoutedRequest Data Structure</h3>
+<p>The <code>RoutedRequest</code> class carries both the clean request and routing context:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">RoutedRequest</span><span class="p">:</span>
+    <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span>           <span class="c1"># Clean, denamespaced request</span>
+    <span class="n">target_server</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>  <span class="c1"># Extracted server name</span>
+    <span class="n">namespaced_name</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="c1"># Original for error formatting</span>
+</code></pre>
+<h3 id="core-functions">Core Functions</h3>
+<h4 id="parse_incoming_request">parse_incoming_request()</h4>
+<ul>
+<li><strong>Purpose</strong>: Single parsing point at system ingress</li>
+<li><strong>Input</strong>: Original namespaced MCPRequest</li>
+<li><strong>Output</strong>: RoutedRequest with clean request OR MCPResponse error</li>
+<li><strong>Auditing</strong>: Parse-time rejections are logged for security visibility</li>
+</ul>
+<h4 id="prepare_outgoing_response">prepare_outgoing_response()</h4>
+<ul>
+<li><strong>Purpose</strong>: Restore namespacing in error messages</li>
+<li><strong>Input</strong>: MCPResponse and RoutedRequest</li>
+<li><strong>Output</strong>: MCPResponse with re-namespaced error messages</li>
+<li><strong>Method</strong>: Regex with word boundaries (e.g., won't replace &quot;sum&quot; in &quot;summary&quot;)</li>
+</ul>
+<h3 id="routing-invariants">Routing Invariants</h3>
+<p>The <code>RoutedRequest.update_request()</code> method enforces:</p>
+<ol>
+<li><strong>Request ID cannot change</strong> - Maintains correlation</li>
+<li><strong>Method cannot change</strong> - Request type is immutable</li>
+</ol>
+<p>Attempts to violate these raise <code>ValueError</code>. This prevents stale namespacing.</p>
+<blockquote>
+<p><strong>Note</strong>: Tool names (in <code>params.name</code>) can be modified by plugins. The routing context preserves the original namespaced name in <code>namespaced_name</code> for error message formatting, even if a plugin modifies the denamespaced tool name in the request.</p>
+</blockquote>
+<h2 id="boundary-translation-pattern">Boundary Translation Pattern</h2>
+<h3 id="why-boundary-translation">Why Boundary Translation?</h3>
+<p>The system implements a <strong>boundary translation pattern</strong> where:</p>
+<ul>
+<li><strong>External boundaries</strong> use namespacing (client ↔ proxy, proxy ↔ servers)</li>
+<li><strong>Internal processing</strong> uses clean identifiers (plugins, logging, validation)</li>
+</ul>
+<p>Benefits:</p>
+<ol>
+<li><strong>Plugins don't need namespacing logic</strong> - Simpler plugin development</li>
+<li><strong>Single parsing point</strong> - No redundant extraction or inconsistencies</li>
+<li><strong>Clean error handling</strong> - Errors reference what the client requested</li>
+<li><strong>Performance</strong> - Parse once, not repeatedly</li>
+</ol>
+<h3 id="information-preservation">Information Preservation</h3>
+<p>The original namespaced identifier is preserved in <code>namespaced_name</code> for:</p>
+<ul>
+<li><strong>Error message formatting</strong> - Client sees errors about what they requested</li>
+<li><strong>Audit logging</strong> - Complete request tracking</li>
+<li><strong>Debugging</strong> - Full context available</li>
+</ul>
+<h2 id="error-handling">Error Handling</h2>
+<h3 id="parse-time-errors">Parse-Time Errors</h3>
+<p>Invalid namespacing is caught immediately and returns structured errors:</p>
+<pre><code class="language-python"><span class="k">if</span> <span class="s2">&quot;__&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">tool_name</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">MCPResponse</span><span class="p">(</span>
+        <span class="n">error</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;code&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">32602</span><span class="p">,</span>  <span class="c1"># Invalid params</span>
+            <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="sa">f</span><span class="s2">&quot;Tool &#39;</span><span class="si">{</span><span class="n">tool_name</span><span class="si">}</span><span class="s2">&#39; is not properly namespaced...&quot;</span>
+        <span class="p">}</span>
+    <span class="p">)</span>
+</code></pre>
+<p>These rejections are <strong>audited</strong> even though they don't reach normal processing.</p>
+<h3 id="server-validation-timing">Server Validation Timing</h3>
+<p>Server existence is validated <strong>AFTER</strong> plugin processing:</p>
+<ul>
+<li><strong>Rationale</strong>: Allows future routing plugins to redirect/create virtual servers</li>
+<li><strong>Trade-off</strong>: Some plugin CPU on impossible routes, but maximum flexibility</li>
+<li><strong>Audit benefit</strong>: Can log attempts to unknown servers</li>
+</ul>
+<h3 id="error-message-re-namespacing">Error Message Re-namespacing</h3>
+<p>Error messages from upstream servers are re-namespaced:</p>
+<pre><code class="language-python"><span class="c1"># Upstream error: &quot;Tool &#39;read_file&#39; not found&quot;</span>
+<span class="c1"># Client sees: &quot;Tool &#39;filesystem__read_file&#39; not found&quot;</span>
+
+<span class="c1"># Uses regex word boundaries to avoid partial matches:</span>
+<span class="n">pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;\b&#39;</span> <span class="o">+</span> <span class="n">re</span><span class="o">.</span><span class="n">escape</span><span class="p">(</span><span class="s2">&quot;read_file&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="sa">r</span><span class="s1">&#39;\b&#39;</span>
+<span class="c1"># Won&#39;t match &quot;read_file&quot; in &quot;thread_file_reader&quot;</span>
+</code></pre>
+<h2 id="multi-server-operations">Multi-Server Operations</h2>
+<h3 id="tools-list-aggregation">Tools List Aggregation</h3>
+<p>The <code>tools/list</code> method aggregates tools from all servers:</p>
+<ol>
+<li><strong>Request broadcast</strong> to all configured servers</li>
+<li><strong>Each server responds</strong> with its available tools</li>
+<li><strong>Proxy aggregates</strong> responses</li>
+<li><strong>Namespacing applied</strong> to each tool (e.g., <code>read_file</code> → <code>filesystem__read_file</code>)</li>
+<li><strong>Security filtering</strong> per server's configured plugins</li>
+<li><strong>Unified response</strong> sent to client</li>
+</ol>
+<h3 id="server-specific-security">Server-Specific Security</h3>
+<p>Each server can have different security policies:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">filesystem</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tool_manager</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;allowlist&quot;</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;read_file&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span>
+<span class="w">    </span><span class="nt">github</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tool_manager</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;allowlist&quot;</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;create_issue&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;list_repos&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<p>The routing system ensures policies are applied to the correct server's requests.</p>
+<h3 id="concurrent-request-handling">Concurrent Request Handling</h3>
+<ul>
+<li>Multiple requests can be processed simultaneously</li>
+<li>Each maintains independent <code>RoutedRequest</code> context</li>
+<li>Request limiting prevents overwhelming upstreams (default: 100 concurrent)</li>
+</ul>
+<h2 id="example-scenarios">Example Scenarios</h2>
+<h3 id="scenario-1-valid-tool-call">Scenario 1: Valid Tool Call</h3>
+<p><strong>Client Request:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;filesystem__read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/etc/hosts&quot;</span><span class="p">}}</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>Processing:</strong></p>
+<ol>
+<li>Parse: Extract <code>filesystem</code> server, <code>read_file</code> tool</li>
+<li>Plugins see: <code>name=&quot;read_file&quot;</code></li>
+<li>Route to: <code>filesystem</code> server</li>
+<li>Upstream sees: <code>name=&quot;read_file&quot;</code></li>
+<li>Response returned to client</li>
+</ol>
+<h3 id="scenario-2-missing-namespace">Scenario 2: Missing Namespace</h3>
+<p><strong>Client Request:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/etc/hosts&quot;</span><span class="p">}}</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>Result:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">-32602</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tool &#39;read_file&#39; is not properly namespaced. All tool calls must use &#39;server__tool&#39; format&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="scenario-3-unknown-server">Scenario 3: Unknown Server</h3>
+<p><strong>Client Request:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unknown__read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">}}</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>Result:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">-32602</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Unknown server &#39;unknown&#39; in request&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="scenario-4-tool-not-found">Scenario 4: Tool Not Found</h3>
+<p><strong>Client Request:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;filesystem__nonexistent&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">}}</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>Upstream Error:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tool &#39;nonexistent&#39; not found&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>Client Sees (re-namespaced):</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tool &#39;filesystem__nonexistent&#39; not found&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="scenario-5-aggregated-tools-list">Scenario 5: Aggregated Tools List</h3>
+<p><strong>Client Request:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tools/list&quot;</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>Aggregated Response:</strong></p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;result&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;tools&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;filesystem__read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Read a file&quot;</span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;filesystem__write_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Write a file&quot;</span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;github__create_issue&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Create an issue&quot;</span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;github__list_repos&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;List repositories&quot;</span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<p>Each tool is namespaced with its server prefix.</p>
+<h3 id="scenario-6-plugin-modification-of-tool-name">Scenario 6: Plugin Modification of Tool Name</h3>
+<p><strong>Plugin Modifies Tool:</strong></p>
+<pre><code class="language-python"><span class="c1"># Middleware plugin renames tool (e.g., for aliasing)</span>
+<span class="n">new_params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+<span class="n">new_params</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;aliased_tool&quot;</span>  <span class="c1"># was &quot;original_tool&quot;</span>
+<span class="n">modified_request</span> <span class="o">=</span> <span class="n">MCPRequest</span><span class="p">(</span>
+    <span class="n">jsonrpc</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">jsonrpc</span><span class="p">,</span>
+    <span class="nb">id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">method</span><span class="p">,</span>
+    <span class="n">params</span><span class="o">=</span><span class="n">new_params</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">modified_content</span><span class="o">=</span><span class="n">modified_request</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Tool renamed&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Result:</strong></p>
+<ul>
+<li>The modified tool name is used for upstream communication</li>
+<li>The original namespaced name is preserved in <code>routed.namespaced_name</code> for error formatting</li>
+<li>Error messages to the client use the original name the client requested</li>
+</ul>
+<blockquote>
+<p><strong>Note</strong>: Tool name modifications are allowed. Only request ID and method changes are blocked by <code>update_request()</code>.</p>
+</blockquote>
+<h2 id="configuration">Configuration</h2>
+<h3 id="basic-multi-server-setup">Basic Multi-Server Setup</h3>
+<pre><code class="language-yaml"><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">filesystem</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">env</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">GITHUB_TOKEN</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${GITHUB_TOKEN}</span>
+<span class="w">  </span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">puppeteer</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-puppeteer&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h3 id="client-configuration-claude-desktop">Client Configuration (Claude Desktop)</h3>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;gatekit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;gatekit&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--config&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;/path/to/gatekit.yaml&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<p>The client only knows about Gatekit, not the individual upstream servers.</p>
+<h2 id="design-rationale">Design Rationale</h2>
+<h3 id="why-require-namespacing">Why Require Namespacing?</h3>
+<ol>
+<li><strong>Explicit routing</strong> - No ambiguity about target server</li>
+<li><strong>Tool collision prevention</strong> - Multiple servers can have same tool names</li>
+<li><strong>Security isolation</strong> - Clear boundaries for policy application</li>
+<li><strong>Future compatibility</strong> - Enables dynamic routing features</li>
+</ol>
+<h3 id="why-parse-once">Why Parse Once?</h3>
+<ol>
+<li><strong>Performance</strong> - Single extraction vs repeated parsing</li>
+<li><strong>Consistency</strong> - One source of truth for routing decisions</li>
+<li><strong>Simplicity</strong> - Clear separation of concerns</li>
+<li><strong>Correctness</strong> - No parsing inconsistencies</li>
+</ol>
+<h3 id="plugin-trust-model">Plugin Trust Model</h3>
+<ol>
+<li><strong>Plugins are trusted</strong> - They are internal Gatekit components, not external actors</li>
+<li><strong>Transformations allowed</strong> - Middleware and security plugins can transform requests (e.g., tool renaming, content redaction)</li>
+<li><strong>Security evaluated</strong> - All plugins (middleware and security) are processed in priority order</li>
+<li><strong>Audit complete</strong> - All transformations are tracked in the ProcessingPipeline</li>
+<li><strong>Context preserved</strong> - Original namespaced names remain available for error formatting</li>
+</ol>
+<h2 id="future-considerations">Future Considerations</h2>
+<h3 id="potential-enhancements">Potential Enhancements</h3>
+<ol>
+<li><strong>Dynamic routing plugins</strong> - Redirect based on load/availability</li>
+<li><strong>Virtual servers</strong> - Plugin-created logical servers</li>
+<li><strong>Routing rules</strong> - Pattern-based routing decisions</li>
+<li><strong>Fallback servers</strong> - Automatic failover</li>
+</ol>
+<p>These would require relaxing routing immutability with careful design.</p>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<p>This document reflects actual behavior as of Gatekit v0.1.0. The implementation is in:</p>
+<ul>
+<li><code>/gatekit/core/routing.py</code>: Core routing logic and boundary translation</li>
+<li><code>/gatekit/proxy/server.py</code>: Request flow and server validation</li>
+<li><code>/gatekit/server_manager.py</code>: Multi-server connection management</li>
+<li>Tests in <code>/tests/unit/test_routing.py</code> and <code>/tests/integration/</code></li>
+</ul>
+<hr />
+<h2 id="summary">Summary</h2>
+<h3 id="key-takeaways">Key Takeaways</h3>
+<ol>
+<li><strong>All tool calls must be namespaced</strong> - No exceptions, even for single server</li>
+<li><strong>Parse once, use everywhere</strong> - Single extraction point at ingress</li>
+<li><strong>Clean internal processing</strong> - Plugins see denamespaced tool names</li>
+<li><strong>Restore for client</strong> - Error messages use original namespaced format</li>
+<li><strong>Routing context is preserved</strong> - Original namespaced names preserved for error formatting</li>
+<li><strong>Tools/list aggregates</strong> - Combines tools from all servers with namespacing</li>
+<li><strong>Per-server security</strong> - Each server has independent policies</li>
+</ol>
+<h3 id="common-misconceptions">Common Misconceptions</h3>
+<ol>
+<li>❌ <strong>&quot;Single server doesn't need namespacing&quot;</strong> → ALL tool calls need namespacing</li>
+<li>❌ <strong>&quot;Plugins see namespaced tools&quot;</strong> → Plugins see clean, denamespaced tool names</li>
+<li>❌ <strong>&quot;Middleware cannot modify tool names&quot;</strong> → Plugins can modify tool names; only ID and method are immutable</li>
+<li>❌ <strong>&quot;Server validation happens first&quot;</strong> → Happens AFTER plugins for flexibility</li>
+<li>❌ <strong>&quot;Each server needs client config&quot;</strong> → Client only configures Gatekit</li>
+</ol>
+<h3 id="quick-reference">Quick Reference</h3>
+<table>
+<thead>
+<tr>
+  <th>Component</th>
+  <th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>parse_incoming_request()</code></td>
+  <td>Extract namespace once at ingress</td>
+</tr>
+<tr>
+  <td><code>RoutedRequest</code></td>
+  <td>Carry clean request + routing context</td>
+</tr>
+<tr>
+  <td><code>prepare_outgoing_response()</code></td>
+  <td>Re-namespace error messages</td>
+</tr>
+<tr>
+  <td><code>server__tool_name</code></td>
+  <td>Namespace format for tools</td>
+</tr>
+<tr>
+  <td><code>tools/list</code></td>
+  <td>Aggregate tools from all servers</td>
+</tr>
+</tbody>
+</table>
+<hr />
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

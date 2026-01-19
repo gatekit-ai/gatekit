@@ -1,0 +1,47 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "pytest",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/bin/python",
+			"args": ["-m", "pytest", "-q"],
+			"options": {
+				"env": {
+					"PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
+				}
+			},
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "pytest (unit)",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/bin/python",
+			"args": ["-m", "pytest", "-q", "tests/unit"],
+			"options": {
+				"env": {
+					"PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
+				}
+			},
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "pytest (integration)",
+			"type": "shell",
+			"command": "${workspaceFolder}/.venv/bin/python",
+			"args": ["-m", "pytest", "-q", "tests/integration"],
+			"options": {
+				"env": {
+					"PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
+				}
+			},
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

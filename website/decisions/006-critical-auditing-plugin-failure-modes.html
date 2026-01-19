@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-006: Critical Plugin Failure Modes (All Plugin Types) - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit plugins (security, middleware, and auditing) need to handle failure scenarios appropriately. The key question is: when a plugin fails to initialize o...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-006-critical-plugin-failure-modes-all-plugin-types">ADR-006: Critical Plugin Failure Modes (All Plugin Types)</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit plugins (security, middleware, and auditing) need to handle failure scenarios appropriately. The key question is: when a plugin fails to initialize or encounters a runtime error, should the system fail-closed (halt) or fail-open (continue without that plugin)?</p>
+<p><strong>Security Perspective</strong>: Plugin failures that silently allow traffic through create security gaps. If a secrets filter fails to load, unprotected secrets could leak. This argues for fail-closed by default.</p>
+<p><strong>Availability Perspective</strong>: Some environments prioritize availability over strict security controls, especially during development. This argues for configurable behavior.</p>
+<p><strong>Resolution</strong>: All plugins default to <code>critical: true</code> (fail-closed). Users can explicitly opt out with <code>critical: false</code> for specific plugins in development/testing scenarios where availability is preferred over strict security.</p>
+<h2 id="decision">Decision</h2>
+<p>We implement <strong>configuration-driven failure behavior</strong> through a <code>critical</code> flag on all plugin types (security, middleware, auditing):</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_secrets_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="c1"># critical: true is the default - omit for normal operation</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Explicitly opt-out for development</span>
+
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit_jsonl&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit.jsonl&quot;</span>
+<span class="w">          </span><span class="c1"># critical: true is the default</span>
+</code></pre>
+<h3 id="implementation-strategy">Implementation Strategy</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">MiddlewarePlugin</span><span class="p">(</span><span class="n">PluginInterface</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for middleware plugins with critical failure support.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="c1"># All plugins default to critical (fail closed) for security</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">critical</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critical&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">SecurityPlugin</span><span class="p">(</span><span class="n">MiddlewarePlugin</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Security plugins inherit critical=True default from MiddlewarePlugin.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">AuditingPlugin</span><span class="p">(</span><span class="n">PluginInterface</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Auditing plugins also default to critical=True.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">critical</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critical&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_critical</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;critical&#39;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+</code></pre>
+<h3 id="plugin-manager-behavior">Plugin Manager Behavior</h3>
+<p>For all plugin types during initialization:</p>
+<pre><code class="language-python"><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># All plugins default to critical=True (fail closed)</span>
+    <span class="n">is_critical</span> <span class="o">=</span> <span class="n">plugin_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;config&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critical&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_critical</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Critical plugin &#39;</span><span class="si">{</span><span class="n">handler_name</span><span class="si">}</span><span class="s2">&#39; failed to initialize: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">raise</span>  <span class="c1"># Halt system startup</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">exception</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Non-critical plugin &#39;</span><span class="si">{</span><span class="n">handler_name</span><span class="si">}</span><span class="s2">&#39; failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Continue without this plugin</span>
+</code></pre>
+<h3 id="key-design-principles">Key Design Principles</h3>
+<ol>
+<li><strong>Secure by Default</strong>: All plugins default to <code>critical: true</code> (fail-closed)</li>
+<li><strong>Explicit Opt-Out</strong>: Users must explicitly set <code>critical: false</code> to allow fail-open behavior</li>
+<li><strong>Per-Plugin Control</strong>: Each plugin can be configured independently</li>
+<li><strong>Clear Error Messages</strong>: Failures explain what happened and how to configure differently</li>
+<li><strong>Consistent Behavior</strong>: All plugin types (security, middleware, auditing) use the same pattern</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-default-to-graceful-failure-critical-false">Alternative 1: Default to Graceful Failure (critical: false)</h3>
+<pre><code class="language-python"><span class="c1"># Original behavior - continue on plugin failures by default</span>
+<span class="bp">self</span><span class="o">.</span><span class="n">critical</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;critical&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Never breaks proxy functionality, good developer experience</li>
+<li><strong>Cons</strong>: <strong>Security risk</strong> - plugins can silently fail, creating protection gaps</li>
+</ul>
+<h3 id="alternative-2-always-fatal-failure-no-configuration">Alternative 2: Always Fatal Failure (no configuration)</h3>
+<pre><code class="language-python"><span class="c1"># Always propagate plugin failures</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="n">PluginFailureError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Plugin failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Maximum security, no protection gaps possible</li>
+<li><strong>Cons</strong>: Too rigid, blocks legitimate development/testing scenarios</li>
+</ul>
+<h3 id="alternative-3-different-defaults-per-plugin-type">Alternative 3: Different Defaults per Plugin Type</h3>
+<pre><code class="language-python"><span class="c1"># Security plugins: critical=True</span>
+<span class="c1"># Middleware plugins: critical=False</span>
+<span class="c1"># Auditing plugins: critical=False</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Balances security and convenience per type</li>
+<li><strong>Cons</strong>: Inconsistent behavior, harder to reason about, middleware failures can still cause issues</li>
+</ul>
+<p><strong>Why We Chose Uniform critical=True Default</strong>: Security plugins failing silently is clearly dangerous. But middleware and auditing plugin failures can also cause problems - a failed call_trace plugin means no debugging visibility; a failed audit plugin means compliance gaps. The safest default is fail-closed for all types, with explicit opt-out for specific use cases.</p>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Secure by Default</strong>: No silent security gaps from plugin failures</li>
+<li><strong>Early Failure Detection</strong>: Configuration errors caught at startup, not runtime</li>
+<li><strong>Clear Error Messages</strong>: Users immediately know what failed and why</li>
+<li><strong>Flexible When Needed</strong>: Explicit <code>critical: false</code> available for development scenarios</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Breaking Change</strong>: Existing configs with broken plugins will now fail at startup (this is intentional - previously they silently failed)</li>
+<li><strong>Configuration Burden</strong>: Development environments may need <code>critical: false</code> for convenience</li>
+<li><strong>Testing Overhead</strong>: Both failure modes must be tested for each plugin type</li>
+</ul>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<p>This decision affects multiple components:</p>
+<ol>
+<li><p><strong>Plugin Interfaces</strong> (<code>gatekit/plugins/interfaces.py</code>):</p>
+<ul>
+<li><code>MiddlewarePlugin.__init__()</code>: <code>self.critical = config.get(&quot;critical&quot;, True)</code></li>
+<li><code>SecurityPlugin.__init__()</code>: Inherits from MiddlewarePlugin, also defaults to True</li>
+<li><code>AuditingPlugin.__init__()</code>: <code>self.critical = config.get(&quot;critical&quot;, True)</code></li>
+<li><code>AuditingPlugin.is_critical()</code>: Returns <code>getattr(self, 'critical', True)</code></li>
+</ul>
+</li>
+<li><p><strong>Plugin Manager</strong> (<code>gatekit/plugins/manager.py</code>):</p>
+<ul>
+<li><code>_load_upstream_scoped_security_plugins()</code>: Check critical flag, default True</li>
+<li><code>_load_upstream_scoped_auditing_plugins()</code>: Check critical flag, default True</li>
+<li><code>_load_upstream_scoped_middleware_plugins()</code>: Check critical flag, default True</li>
+<li>All use pattern: <code>is_critical = plugin_config.get(&quot;config&quot;, {}).get(&quot;critical&quot;, True)</code></li>
+</ul>
+</li>
+<li><p><strong>All Plugins</strong>:</p>
+<ul>
+<li>Support <code>critical</code> configuration parameter</li>
+<li>Default to <code>critical: true</code> for fail-closed behavior</li>
+</ul>
+</li>
+<li><p><strong>Documentation</strong>:</p>
+<ul>
+<li>Update configuration examples to show <code>critical: false</code> for development</li>
+<li>Document that omitting <code>critical</code> means fail-closed behavior</li>
+</ul>
+</li>
+</ol>
+<h2 id="use-cases">Use Cases</h2>
+<h3 id="production-environment-default-behavior">Production Environment (Default Behavior)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_secrets_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="c1"># critical: true is default - plugin failures halt startup</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="c1"># critical: true is default</span>
+
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit_jsonl&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/var/log/gatekit/audit.jsonl&quot;</span>
+<span class="w">          </span><span class="c1"># critical: true is default - audit failures halt startup</span>
+</code></pre>
+<h3 id="developmenttesting-environment">Development/Testing Environment</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Allow startup even if PII filter has config issues</span>
+
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit_jsonl&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;debug.jsonl&quot;</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Don&#39;t break development if audit log path is wrong</span>
+</code></pre>
+<h3 id="mixed-criticality">Mixed Criticality</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_secrets_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="c1"># critical: true - secrets MUST be protected</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># PII protection is nice-to-have in this environment</span>
+
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit_jsonl&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit.jsonl&quot;</span>
+<span class="w">          </span><span class="c1"># critical: true - compliance requires audit trail</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit_human_readable&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;debug.log&quot;</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Human-readable log is optional debugging aid</span>
+</code></pre>
+<h2 id="review">Review</h2>
+<p>This decision will be reviewed when:</p>
+<ul>
+<li>User feedback indicates the default is too strict for common use cases</li>
+<li>New plugin types with different failure characteristics are added</li>
+<li>Performance impact of critical checking becomes significant</li>
+</ul>
+<h2 id="history">History</h2>
+<ul>
+<li><strong>Original behavior</strong>: Auditing and middleware defaulted to <code>critical: false</code>; security defaulted to <code>critical: true</code> but wasn't enforced during initialization</li>
+<li><strong>Current behavior</strong>: All plugin types default to <code>critical: true</code> after discovering that security plugins silently failing to initialize created security gaps</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

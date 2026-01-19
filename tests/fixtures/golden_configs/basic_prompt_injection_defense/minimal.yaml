@@ -1,0 +1,10 @@
+handler: basic_prompt_injection_defense
+category: security
+description: Disabled baseline verifying schema defaults.
+config:
+  enabled: false
+  critical: true
+  priority: 50
+  action: block
+  sensitivity: standard
+  detection_methods: {}

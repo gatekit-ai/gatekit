@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Known Issues - Gatekit Documentation</title>
+  <meta name="description" content="This document tracks known issues, limitations, and workarounds in Gatekit.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../docs/getting-started.html">Get started</a>
+        <a href="../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html" class="active">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="known-issues">Known Issues</h1>
+<p>This document tracks known issues, limitations, and workarounds in Gatekit.</p>
+<h2 id="logging">Logging</h2>
+<h3 id="stderr-logging-not-supported-on-windsurf-windows">stderr Logging Not Supported on Windsurf (Windows)</h3>
+<p><strong>Issue</strong>: Windsurf on Windows appears to terminate MCP server processes that write to stderr. The MCP specification explicitly allows stderr for logging purposes, so this may be a client compatibility issue.</p>
+<p><strong>Affected</strong>: Windsurf IDE on Windows only. Claude Desktop and Windsurf on macOS handle stderr correctly.</p>
+<p><strong>Workaround</strong>: The guided setup defaults to file-only logging (<code>handlers: [&quot;file&quot;]</code>). If you manually add <code>stderr</code> to handlers and use Windsurf on Windows, the gateway will be terminated immediately after startup.</p>
+<p><strong>Status</strong>: This appears to be a Windsurf bug. If Windsurf fixes this behavior, stderr logging can be re-enabled as a default option.</p>
+<h3 id="multiple-clients-writing-to-same-log-file">Multiple Clients Writing to Same Log File</h3>
+<p><strong>Issue</strong>: When multiple MCP clients (e.g., Claude Desktop and Windsurf) use the same Gatekit configuration file, their logs are interleaved in the same log file, making debugging difficult.</p>
+<p><strong>Workaround</strong>: Create separate configuration files for each client with different <code>file_path</code> values:</p>
+<pre><code class="language-yaml"><span class="c1"># configs/gatekit-claude.yaml</span>
+<span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">handlers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;file&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit-claude.log&quot;</span>
+
+<span class="c1"># configs/gatekit-windsurf.yaml</span>
+<span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">handlers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;file&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit-windsurf.log&quot;</span>
+</code></pre>
+<p><strong>Status</strong>: Future releases may add automatic per-session log separation.</p>
+<h2 id="terminal-compatibility">Terminal Compatibility</h2>
+<h3 id="tui-rendering-issues-in-ghostty-terminal">TUI Rendering Issues in Ghostty Terminal</h3>
+<p><strong>Issue</strong>: The Gatekit TUI renders with washed-out colors and poor contrast in Ghostty terminal. The default blue theme appears as dark gray, and some UI elements (particularly Input field borders in config modals) may be invisible or hard to see.</p>
+<p><strong>Affected</strong>: Ghostty terminal on macOS. Other terminals (iTerm2, Terminal.app, Kitty, WezTerm) render correctly.</p>
+<p><strong>Root Cause</strong>: Multiple factors contribute to this issue:</p>
+<ol>
+<li><strong>Color space differences</strong>: Ghostty uses sRGB color space by default, which renders truecolor RGB values differently than other terminals</li>
+<li><strong>minimum-contrast feature</strong>: Ghostty's automatic contrast adjustment can make similar colors identical, causing borders to disappear</li>
+<li><strong>Textual framework</strong>: Gatekit uses Textual which relies on 16.7 million truecolor values rather than ANSI palette colors, making it sensitive to color space handling</li>
+</ol>
+<p><strong>Workaround</strong>: Add the following to your Ghostty config (<code>~/.config/ghostty/config</code>):</p>
+<pre><code class="language-ini"><span class="c1"># Use Display P3 color space (macOS only) - fixes washed-out colors</span>
+<span class="na">window-colorspace</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">display-p3</span>
+
+<span class="c1"># Disable aggressive contrast adjustments that can hide UI elements</span>
+<span class="na">minimum-contrast</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">1</span>
+</code></pre>
+<p><strong>References</strong>:</p>
+<ul>
+<li><a href="https://ghostty.org/docs/config/reference">Ghostty Config Reference</a></li>
+<li><a href="https://github.com/ghostty-org/ghostty/discussions/5322">Ghostty Discussion #5322 - ANSI colors muted</a></li>
+<li><a href="https://github.com/ghostty-org/ghostty/discussions/6083">Ghostty Discussion #6083 - minimum-contrast muting colors</a></li>
+</ul>
+<p><strong>Status</strong>: This is a terminal-specific rendering behavior. The workaround above resolves most issues. Future Gatekit releases may add Ghostty-specific detection and styling adjustments.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

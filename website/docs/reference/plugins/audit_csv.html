@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CSV Auditing - Gatekit Documentation</title>
+  <meta name="description" content="Log MCP requests, responses, and notifications in CSV format for spreadsheet analysis and simple log review.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="csv-auditing">CSV Auditing</h1>
+<p>Log MCP requests, responses, and notifications in CSV format for spreadsheet analysis and simple log review.</p>
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Handler</td>
+  <td><code>audit_csv</code></td>
+</tr>
+<tr>
+  <td>Type</td>
+  <td>Auditing</td>
+</tr>
+<tr>
+  <td>Scope</td>
+  <td>Global (can be configured globally or per-server)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-it-works">How It Works</h2>
+<p>The CSV auditing plugin:</p>
+<ol>
+<li>Creates a CSV file with headers on first write</li>
+<li>Logs each MCP event as a row with key metadata</li>
+<li>Supports configurable delimiters and quote styles</li>
+<li>Protects against CSV injection attacks</li>
+</ol>
+<h2 id="csv-columns">CSV Columns</h2>
+<table>
+<thead>
+<tr>
+  <th>Column</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>timestamp</code></td>
+  <td>ISO 8601 timestamp</td>
+</tr>
+<tr>
+  <td><code>event_type</code></td>
+  <td>REQUEST, RESPONSE, NOTIFICATION, error types</td>
+</tr>
+<tr>
+  <td><code>request_id</code></td>
+  <td>MCP request ID</td>
+</tr>
+<tr>
+  <td><code>server_name</code></td>
+  <td>Upstream server name</td>
+</tr>
+<tr>
+  <td><code>method</code></td>
+  <td>MCP method called</td>
+</tr>
+<tr>
+  <td><code>tool</code></td>
+  <td>Tool name (for tools/call)</td>
+</tr>
+<tr>
+  <td><code>pipeline_outcome</code></td>
+  <td>allowed, blocked, modified, etc.</td>
+</tr>
+<tr>
+  <td><code>security_evaluated</code></td>
+  <td>true/false</td>
+</tr>
+<tr>
+  <td><code>modified</code></td>
+  <td>true/false</td>
+</tr>
+<tr>
+  <td><code>reason</code></td>
+  <td>Combined plugin reasons</td>
+</tr>
+<tr>
+  <td><code>duration_ms</code></td>
+  <td>Processing time (responses only)</td>
+</tr>
+<tr>
+  <td><code>response_status</code></td>
+  <td>success/error (responses only)</td>
+</tr>
+<tr>
+  <td><code>error_code</code></td>
+  <td>JSON-RPC error code (errors only)</td>
+</tr>
+<tr>
+  <td><code>error_message</code></td>
+  <td>Error message (errors only)</td>
+</tr>
+<tr>
+  <td><code>error_classification</code></td>
+  <td>Error category (errors only)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="configuration-reference">Configuration Reference</h2>
+<h3 id="output_file">output_file</h3>
+<p>Path to the CSV log file. Supports <code>~</code> for home directory.</p>
+<p><strong>Type:</strong> string
+<strong>Default:</strong> <code>logs/gatekit_audit.csv</code>
+<strong>Required:</strong> Yes</p>
+<h3 id="csv_config">csv_config</h3>
+<p>Optional CSV format configuration.</p>
+<table>
+<thead>
+<tr>
+  <th>Option</th>
+  <th>Type</th>
+  <th>Default</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>delimiter</code></td>
+  <td>string</td>
+  <td><code>,</code></td>
+  <td>Field delimiter: <code>,</code>, <code>\t</code> (tab), <code>;</code>, or <code>\|</code></td>
+</tr>
+<tr>
+  <td><code>quote_char</code></td>
+  <td>string</td>
+  <td><code>&quot;</code></td>
+  <td>Character to quote fields</td>
+</tr>
+<tr>
+  <td><code>quote_style</code></td>
+  <td>string</td>
+  <td><code>minimal</code></td>
+  <td>When to quote: <code>minimal</code>, <code>all</code>, <code>nonnumeric</code>, <code>none</code></td>
+</tr>
+<tr>
+  <td><code>escape_char</code></td>
+  <td>string</td>
+  <td><code>\</code></td>
+  <td>Escape character (used with <code>quote_style: none</code>)</td>
+</tr>
+<tr>
+  <td><code>null_value</code></td>
+  <td>string</td>
+  <td><code>&quot;&quot;</code></td>
+  <td>Value to use for null/empty fields</td>
+</tr>
+</tbody>
+</table>
+<h2 id="yaml-configuration">YAML Configuration</h2>
+<h3 id="minimal-configuration">Minimal Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_csv</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.csv</span>
+</code></pre>
+<h3 id="full-configuration">Full Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_csv</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">           </span><span class="c1"># Don&#39;t block requests if logging fails</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.csv</span>
+
+<span class="w">    </span><span class="nt">csv_config</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">delimiter</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;,&quot;</span><span class="w">          </span><span class="c1"># Standard comma delimiter</span>
+<span class="w">      </span><span class="nt">quote_char</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;&quot;&#39;</span><span class="w">         </span><span class="c1"># Standard double-quote</span>
+<span class="w">      </span><span class="nt">quote_style</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">minimal</span><span class="w">    </span><span class="c1"># Only quote when needed</span>
+<span class="w">      </span><span class="nt">escape_char</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;\&#39;</span><span class="w">        </span><span class="c1"># Backslash escaping</span>
+<span class="w">      </span><span class="nt">null_value</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w">          </span><span class="c1"># Empty string for nulls</span>
+</code></pre>
+<h3 id="tab-separated-values-tsv">Tab-Separated Values (TSV)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_csv</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.tsv</span>
+
+<span class="w">    </span><span class="nt">csv_config</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">delimiter</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;\t&quot;</span><span class="w">         </span><span class="c1"># Tab delimiter for TSV</span>
+<span class="w">      </span><span class="nt">quote_style</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nonnumeric</span><span class="w"> </span><span class="c1"># Quote strings, not numbers</span>
+</code></pre>
+<h3 id="european-style-semicolon">European Style (Semicolon)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_csv</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.csv</span>
+
+<span class="w">    </span><span class="nt">csv_config</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">delimiter</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;;&quot;</span><span class="w">          </span><span class="c1"># Semicolon for locales using comma as decimal</span>
+<span class="w">      </span><span class="nt">null_value</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;NULL&quot;</span><span class="w">      </span><span class="c1"># Explicit null marker</span>
+</code></pre>
+<h2 id="example-output">Example Output</h2>
+<pre><code class="language-csv"><span class="n">timestamp</span><span class="p">,</span><span class="n">event_type</span><span class="p">,</span><span class="n">request_id</span><span class="p">,</span><span class="n">server_name</span><span class="p">,</span><span class="n">method</span><span class="p">,</span><span class="k">tool</span><span class="p">,</span><span class="n">pipeline_outcome</span><span class="p">,</span><span class="n">security_evaluated</span><span class="p">,</span><span class="n">modified</span><span class="p">,</span><span class="n">reason</span><span class="p">,</span><span class="n">duration_ms</span><span class="p">,</span><span class="n">response_status</span><span class="p">,</span><span class="n">error_code</span><span class="p">,</span><span class="n">error_message</span><span class="p">,</span><span class="n">error_classification</span>
+<span class="mi">2025</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">12</span><span class="n">T15</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mf">45.123</span><span class="n">Z</span><span class="p">,</span><span class="n">RESPONSE</span><span class="p">,</span><span class="mi">42</span><span class="p">,</span><span class="n">filesystem</span><span class="p">,</span><span class="n">tools</span><span class="o">/</span><span class="n">call</span><span class="p">,</span><span class="n">read_file</span><span class="p">,</span><span class="n">allowed</span><span class="p">,</span><span class="bp">true</span><span class="p">,</span><span class="bp">false</span><span class="p">,</span><span class="n">No</span><span class="w"> </span><span class="n">PII</span><span class="w"> </span><span class="n">detected</span><span class="p">,</span><span class="mi">45</span><span class="p">,</span><span class="n">success</span><span class="p">,,,</span>
+<span class="mi">2025</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">12</span><span class="n">T15</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mf">46.456</span><span class="n">Z</span><span class="p">,</span><span class="n">SECURITY_BLOCK</span><span class="p">,</span><span class="mi">43</span><span class="p">,</span><span class="n">filesystem</span><span class="p">,</span><span class="n">tools</span><span class="o">/</span><span class="n">call</span><span class="p">,</span><span class="n">write_file</span><span class="p">,</span><span class="n">blocked</span><span class="p">,</span><span class="bp">true</span><span class="p">,</span><span class="bp">false</span><span class="p">,</span><span class="s2">&quot;Secret detected: 1 secret(s) found&quot;</span><span class="p">,</span><span class="mi">0</span><span class="p">,,,,</span>
+</code></pre>
+<h2 id="use-cases">Use Cases</h2>
+<h3 id="quick-analysis">Quick Analysis</h3>
+<p>Open in Excel, Google Sheets, or Numbers for sorting and filtering.</p>
+<h3 id="log-rotation">Log Rotation</h3>
+<p>Use standard log rotation tools (logrotate) on the output file.</p>
+<h3 id="simple-monitoring">Simple Monitoring</h3>
+<p>Use <code>tail -f logs/audit.csv</code> for real-time monitoring.</p>
+<h2 id="security-features">Security Features</h2>
+<h3 id="csv-injection-protection">CSV Injection Protection</h3>
+<p>Values starting with <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code>, or tab are prefixed with a single quote to prevent formula execution when opened in spreadsheets.</p>
+<h3 id="newline-escaping">Newline Escaping</h3>
+<p>Newlines in values are escaped as <code>\n</code> to ensure each CSV record stays on one line, which is critical for line-based log analysis tools.</p>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li><strong>No message bodies</strong> - CSV format doesn't include request/response bodies. Use JSON Lines for full body logging.</li>
+<li><strong>Flat structure</strong> - Complex pipeline data is flattened; use JSON Lines for full pipeline details.</li>
+<li><strong>Excel cell limit</strong> - Values longer than 32,000 characters are truncated (Excel limit: 32,767).</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

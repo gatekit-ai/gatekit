@@ -1,0 +1,13 @@
+handler: audit_jsonl
+category: auditing
+description: >-
+  High-visibility config enabling every body capture knob to surface adapter
+  regressions that reorder keys or drop nested structures.
+config:
+  enabled: true
+  critical: true
+  output_file: logs/audit-edge.jsonl
+  include_request_body: true
+  include_response_body: true
+  include_notification_body: true
+  max_body_size: 2048

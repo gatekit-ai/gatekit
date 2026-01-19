@@ -1,0 +1,18 @@
+handler: call_trace
+category: middleware
+description: >-
+  Focused trace output tuned for support engineers where params and response
+  sizes are trimmed aggressively.
+config:
+  enabled: true
+  critical: true
+  priority: 60
+  max_param_length: 64
+  trace_fields:
+    server: true
+    tool: true
+    params: false
+    response_size: true
+    duration: true
+    request_id: true
+    timestamp: true

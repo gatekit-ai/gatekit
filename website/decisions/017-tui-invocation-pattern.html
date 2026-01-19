@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-017: TUI Invocation Pattern - Gatekit Documentation</title>
+  <meta name="description" content="to eliminate terminology confusion.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-017-tui-invocation-pattern">ADR-017: TUI Invocation Pattern</h1>
+<blockquote>
+<p><strong>Note: The command structure has been updated from <code>gatekit proxy</code> to <code>gatekit-gateway</code></strong>
+to eliminate terminology confusion.</p>
+</blockquote>
+<h2 id="context">Context</h2>
+<p>Gatekit serves two distinct use cases that require different invocation patterns:</p>
+<ol>
+<li><p><strong>MCP Client Integration</strong>: Automated systems (like Claude Desktop) invoke Gatekit to proxy MCP connections between clients and servers. This requires a stable, predictable command-line interface.</p>
+</li>
+<li><p><strong>Human Configuration</strong>: Users need an intuitive way to configure Gatekit's security policies, audit settings, and server connections through a Terminal User Interface (TUI).</p>
+</li>
+</ol>
+<p>The challenge is providing both capabilities without creating confusion or breaking existing integrations.</p>
+<h3 id="initial-considerations">Initial Considerations</h3>
+<p>We initially considered several approaches:</p>
+<ol>
+<li><p><strong>Auto-detection based on <code>isatty()</code></strong>: Automatically launch TUI when stdin is a terminal, proxy mode when piped. This was rejected as &quot;too clever&quot; and potentially confusing.</p>
+</li>
+<li><p><strong>Mode flags</strong>: Using flags like <code>--tui</code> vs default proxy behavior. This requires users to remember flags and doesn't make the default use case obvious.</p>
+</li>
+<li><p><strong>Separate commands</strong>: Creating <code>gatekit-config</code> alongside <code>gatekit</code>. This fragments the user experience and requires separate installation/distribution.</p>
+</li>
+<li><p><strong>Subcommands with serve</strong>: Using <code>gatekit serve --config</code> vs <code>gatekit config</code>. The word &quot;serve&quot; was deemed inaccurate since Gatekit acts as a proxy, not a server.</p>
+</li>
+</ol>
+<h2 id="decision">Decision</h2>
+<p>We will implement a <strong>human-first default</strong> with explicit subcommands:</p>
+<ul>
+<li><strong><code>gatekit</code></strong> - Opens TUI configuration interface (default behavior)</li>
+<li><strong><code>gatekit &lt;path-to-config&gt;</code></strong> - Opens TUI with specific configuration file loaded</li>
+<li><strong><code>gatekit-gateway --config &lt;path-to-config&gt;</code></strong> - Run as MCP gateway/proxy (required for MCP clients)</li>
+</ul>
+<h2 id="rationale">Rationale</h2>
+<h3 id="human-first-default">Human-First Default</h3>
+<p>Making TUI the default behavior optimizes for the most common human interaction: configuration. Users can simply type <code>gatekit</code> to manage their security policies and server configurations.</p>
+<h3 id="explicit-automation">Explicit Automation</h3>
+<p>MCP clients and automated systems must explicitly use <code>gatekit-gateway --config file</code>. This:</p>
+<ul>
+<li>Makes the intent clear in configuration files</li>
+<li>Prevents accidental TUI launches in automated contexts</li>
+<li>Provides stability for programmatic usage</li>
+<li>Uses accurate terminology (&quot;proxy&quot; matches Gatekit's technical role)</li>
+</ul>
+<h3 id="progressive-disclosure">Progressive Disclosure</h3>
+<p>New users encounter the friendly TUI by default, while advanced users and automated systems use explicit subcommands. This follows the principle of making simple things simple and complex things possible.</p>
+<h3 id="terminology-alignment">Terminology Alignment</h3>
+<p>Using <code>proxy</code> as the subcommand aligns with Gatekit's technical architecture and clarifies its role for users. The separate <code>gatekit-gateway</code> command provides a clear entry point for MCP client integration.</p>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Intuitive default</strong>: Users get immediate value from typing <code>gatekit</code></li>
+<li><strong>Clear separation</strong>: Configuration vs operation modes are explicit</li>
+<li><strong>Future extensibility</strong>: Easy to add more subcommands (<code>gatekit validate</code>, <code>gatekit status</code>, etc.)</li>
+<li><strong>Automation-friendly</strong>: MCP clients have stable, explicit invocation</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Breaking change</strong>: Existing MCP client configurations must be updated</li>
+<li><strong>Migration effort</strong>: Users must update their <code>claude_desktop_config.json</code> files</li>
+<li><strong>Command complexity</strong>: Slightly more verbose for MCP client configurations</li>
+</ul>
+<h3 id="migration-strategy">Migration Strategy</h3>
+<p>To minimize disruption during the transition:</p>
+<ol>
+<li><p><strong>Backward compatibility detection</strong>: If <code>--config</code> is used without a subcommand and stdin is not a TTY (indicating MCP client usage), show a deprecation warning and run in proxy mode.</p>
+</li>
+<li><p><strong>Clear migration guidance</strong>: Provide documentation and examples for updating MCP client configurations.</p>
+</li>
+<li><p><strong>Graceful degradation</strong>: If Textual fails to import, provide a helpful error message.</p>
+</li>
+</ol>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="command-structure">Command Structure</h3>
+<pre><code class="language-bash"><span class="c1"># TUI modes (human interaction)</span>
+gatekit<span class="w">                         </span><span class="c1"># Open TUI with default/last config</span>
+gatekit<span class="w"> </span>&lt;path-to-config&gt;<span class="w">        </span><span class="c1"># Open TUI with specific config</span>
+
+<span class="c1"># Gateway mode (MCP client integration)</span>
+gatekit-gateway<span class="w"> </span>--config<span class="w"> </span>&lt;path-to-config&gt;<span class="w">   </span><span class="c1"># Run as MCP gateway/proxy</span>
+
+<span class="c1"># Future extensibility</span>
+gatekit<span class="w"> </span>validate<span class="w"> </span>--config<span class="w"> </span>&lt;path-to-config&gt;<span class="w">  </span><span class="c1"># Validate configuration</span>
+gatekit<span class="w"> </span>status<span class="w">                               </span><span class="c1"># Show running instances</span>
+</code></pre>
+<h3 id="separate-entry-points">Separate Entry Points</h3>
+<p>The final implementation uses separate entry points for clarity:</p>
+<ul>
+<li><code>gatekit</code> - TUI entry point (human interaction)</li>
+<li><code>gatekit-gateway</code> - Gateway entry point (MCP client integration)</li>
+</ul>
+<p>This eliminates the need for runtime detection or deprecation warnings.</p>
+<h3 id="dependencies">Dependencies</h3>
+<ul>
+<li>Textual (<code>textual~=7.2.0</code>) is a core dependency of Gatekit</li>
+<li>Both <code>gatekit</code> (TUI) and <code>gatekit-gateway</code> include Textual in their installation</li>
+<li>The TUI leverages Textual's rich terminal UI capabilities</li>
+</ul>
+<h2 id="alternative-considered">Alternative Considered</h2>
+<p><strong>Option: <code>gatekit run --config</code></strong> was considered as a neutral alternative to avoid the gateway/proxy terminology tension. The final decision was <code>gatekit-gateway</code> as a separate command to maintain technical clarity.</p>
+<h2 id="decision-makers">Decision Makers</h2>
+<p>User preference after evaluating multiple approaches and considering both technical accuracy and user experience implications.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

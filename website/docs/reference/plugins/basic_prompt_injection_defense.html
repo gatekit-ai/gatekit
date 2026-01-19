@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Basic Prompt Injection Defense - Gatekit Documentation</title>
+  <meta name="description" content="Detect and filter obvious prompt injection patterns using regex-based detection.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="basic-prompt-injection-defense">Basic Prompt Injection Defense</h1>
+<p>Detect and filter obvious prompt injection patterns using regex-based detection.</p>
+<blockquote>
+<p><strong>Warning:</strong> This plugin provides basic protection only and is NOT suitable for production use. Regex-based detection can be bypassed by sophisticated attacks. For production environments, implement AI-based detection or human review processes.</p>
+</blockquote>
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Handler</td>
+  <td><code>basic_prompt_injection_defense</code></td>
+</tr>
+<tr>
+  <td>Type</td>
+  <td>Security</td>
+</tr>
+<tr>
+  <td>Scope</td>
+  <td>Global (can be configured globally or per-server)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="detection-categories">Detection Categories</h2>
+<p>The plugin detects three categories of prompt injection patterns:</p>
+<table>
+<thead>
+<tr>
+  <th>Category</th>
+  <th>Description</th>
+  <th>Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>delimiter_injection</code></td>
+  <td>Attempts to break out of context using delimiters</td>
+  <td>Triple quotes, markdown code blocks, XML tags with system/admin keywords</td>
+</tr>
+<tr>
+  <td><code>role_manipulation</code></td>
+  <td>Attempts to change the AI's role or persona</td>
+  <td>&quot;you are now an admin&quot;, &quot;act as system&quot;, &quot;ignore previous role&quot;</td>
+</tr>
+<tr>
+  <td><code>context_hijacking</code></td>
+  <td>Attempts to reset or override context</td>
+  <td>&quot;ignore all previous instructions&quot;, &quot;forget everything&quot;, &quot;reset context&quot;</td>
+</tr>
+</tbody>
+</table>
+<h2 id="configuration-reference">Configuration Reference</h2>
+<h3 id="action">action</h3>
+<p>What to do when a prompt injection is detected.</p>
+<table>
+<thead>
+<tr>
+  <th>Value</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>block</code></td>
+  <td>Reject the request/response entirely</td>
+</tr>
+<tr>
+  <td><code>redact</code></td>
+  <td>Replace injection patterns with <code>[PROMPT INJECTION REDACTED by Gatekit]</code></td>
+</tr>
+<tr>
+  <td><code>audit_only</code></td>
+  <td>Log detection but allow through unchanged</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Default:</strong> <code>redact</code></p>
+<h3 id="sensitivity">sensitivity</h3>
+<p>Controls pattern matching aggressiveness.</p>
+<table>
+<thead>
+<tr>
+  <th>Value</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>relaxed</code></td>
+  <td>Fewer patterns, only the most obvious attacks. Minimizes false positives.</td>
+</tr>
+<tr>
+  <td><code>standard</code></td>
+  <td>Balanced detection with good coverage and acceptable false positive rate.</td>
+</tr>
+<tr>
+  <td><code>strict</code></td>
+  <td>Maximum protection with more patterns. May have higher false positive rate.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Default:</strong> <code>standard</code></p>
+<h3 id="detection_methods">detection_methods</h3>
+<p>Configure which detection categories to enable. Each has an <code>enabled</code> boolean.</p>
+<table>
+<thead>
+<tr>
+  <th>Method</th>
+  <th>Description</th>
+  <th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>delimiter_injection</code></td>
+  <td>Detect delimiter-based attacks</td>
+  <td>Enabled</td>
+</tr>
+<tr>
+  <td><code>role_manipulation</code></td>
+  <td>Detect role/persona manipulation</td>
+  <td>Enabled</td>
+</tr>
+<tr>
+  <td><code>context_hijacking</code></td>
+  <td>Detect context reset attempts</td>
+  <td>Enabled</td>
+</tr>
+</tbody>
+</table>
+<h2 id="yaml-configuration">YAML Configuration</h2>
+<h3 id="minimal-configuration">Minimal Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic_prompt_injection_defense</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h3 id="full-configuration">Full Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic_prompt_injection_defense</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">15</span><span class="w">              </span><span class="c1"># Run early, after PII/secrets filters</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">            </span><span class="c1"># Block requests if plugin fails</span>
+
+<span class="w">    </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redact</span><span class="w">            </span><span class="c1"># block | redact | audit_only</span>
+<span class="w">    </span><span class="nt">sensitivity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">standard</span><span class="w">     </span><span class="c1"># relaxed | standard | strict</span>
+
+<span class="w">    </span><span class="nt">detection_methods</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">delimiter_injection</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">role_manipulation</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">context_hijacking</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h3 id="high-security-example-block-mode">High-Security Example (Block Mode)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic_prompt_injection_defense</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">    </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">block</span><span class="w">             </span><span class="c1"># Never allow injections through</span>
+<span class="w">    </span><span class="nt">sensitivity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">strict</span><span class="w">       </span><span class="c1"># Maximum detection (accept more false positives)</span>
+
+<span class="w">    </span><span class="nt">detection_methods</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">delimiter_injection</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">role_manipulation</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">context_hijacking</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h3 id="low-false-positive-example">Low False-Positive Example</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic_prompt_injection_defense</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_only</span><span class="w">        </span><span class="c1"># Log but don&#39;t interfere</span>
+<span class="w">    </span><span class="nt">sensitivity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">relaxed</span><span class="w">      </span><span class="c1"># Only the most obvious attacks</span>
+
+<span class="w">    </span><span class="nt">detection_methods</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">delimiter_injection</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">role_manipulation</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">context_hijacking</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">        </span><span class="c1"># Many legitimate uses of &quot;start fresh&quot;</span>
+</code></pre>
+<h2 id="pattern-examples-by-sensitivity">Pattern Examples by Sensitivity</h2>
+<h3 id="relaxed-mode">Relaxed Mode</h3>
+<ul>
+<li><code>[SYSTEM]...[/SYSTEM]</code> delimiters</li>
+<li><code>&lt;system&gt;...&lt;/system&gt;</code> XML tags</li>
+<li>&quot;you are now an admin/administrator/root/superuser/DAN&quot;</li>
+<li>&quot;you are now operating as root/admin/system&quot;</li>
+<li>&quot;ignore all previous instructions&quot;</li>
+<li>&quot;forget everything you were told&quot;</li>
+<li>&quot;override/bypass all safety protocols&quot;</li>
+</ul>
+<h3 id="standard-mode-adds">Standard Mode (adds)</h3>
+<ul>
+<li>Triple quotes with injection keywords</li>
+<li>Markdown code blocks with system/admin keywords</li>
+<li>&quot;ignore/disregard previous instructions/commands&quot;</li>
+<li>&quot;act as admin&quot; patterns</li>
+<li>&quot;with elevated privileges&quot;</li>
+<li>&quot;reset context/conversation/session&quot;</li>
+<li>&quot;start fresh and ignore&quot;</li>
+</ul>
+<h3 id="strict-mode-adds">Strict Mode (adds)</h3>
+<ul>
+<li>Double quotes with bypass keywords</li>
+<li>Shorter &quot;you are admin&quot; patterns</li>
+<li>&quot;admin mode/access/override&quot;</li>
+<li>&quot;new conversation/session&quot; (may catch legitimate uses)</li>
+</ul>
+<h2 id="limitations">Limitations</h2>
+<p>This plugin will NOT detect:</p>
+<ul>
+<li><strong>Semantic injections</strong> - Attacks that use meaning rather than keywords</li>
+<li><strong>Encoded attacks</strong> - Base64, ROT13, or other encoding schemes (ROT13 was removed due to false positives)</li>
+<li><strong>Synonym-based evasion</strong> - Using alternative words with same meaning</li>
+<li><strong>Multi-turn attacks</strong> - Gradual context manipulation across messages</li>
+<li><strong>Context-dependent manipulation</strong> - Attacks that depend on prior conversation</li>
+<li><strong>Advanced jailbreaking</strong> - Sophisticated techniques that don't match simple patterns</li>
+<li><strong>Injections in responses</strong> - Detection works on both requests and responses, but file contents from upstream servers may contain injection patterns that trigger false positives</li>
+</ul>
+<h2 id="redaction-format">Redaction Format</h2>
+<p>When <code>action: redact</code>, detected patterns are replaced with:</p>
+<pre><code class="language-text"><span class="k">[PROMPT INJECTION REDACTED by Gatekit]</span>
+</code></pre>
+<h2 id="security-note">Security Note</h2>
+<p>Matched injection text is intentionally excluded from audit logs to prevent &quot;log replay attacks&quot; where an AI reviewing logs could be affected by injection patterns stored in the logs.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-005: Configuration Management Design - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit requires flexible configuration management to support:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-005-configuration-management-design">ADR-005: Configuration Management Design</h1>
+<p><strong>Last Validated</strong>: 2026-01-17 - Updated to reflect current implementation (env var overrides not implemented, upstream config simplified).</p>
+<h2 id="context">Context</h2>
+<p>Gatekit requires flexible configuration management to support:</p>
+<ol>
+<li><strong>Security Policies</strong>: Configurable filtering rules and security parameters</li>
+<li><strong>Server Connections</strong>: Dynamic configuration of upstream MCP servers</li>
+<li><strong>Transport Settings</strong>: Different transport types with specific parameters</li>
+<li><strong>Environment Adaptation</strong>: Different settings for dev/staging/production</li>
+<li><strong>Runtime Updates</strong>: Some configurations may need dynamic updates</li>
+<li><strong>Type Safety</strong>: Prevent configuration errors that could impact security</li>
+<li><strong>Plugin Extensibility</strong>: Support for varied plugin configurations with proper validation</li>
+</ol>
+<p>The configuration system must balance flexibility, type safety, ease of use, and extensibility.</p>
+<h2 id="decision">Decision</h2>
+<p>We will implement a <strong>hybrid configuration system</strong> that combines the strengths of Python dataclasses and Pydantic models:</p>
+<h3 id="1-pydantic-models-for-configuration-inputvalidation">1. Pydantic Models for Configuration Input/Validation</h3>
+<p>Pydantic models will handle the initial loading and validation of configuration from YAML files. This provides:</p>
+<ul>
+<li>Strong validation of user input with clear error messages</li>
+<li>Schema validation for complex, nested structures</li>
+<li>Type coercion for configuration values</li>
+<li>Support for default values and complex constraints</li>
+</ul>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span><span class="p">,</span> <span class="n">Field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="c1"># Pydantic schemas for YAML validation</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">UpstreamConfigSchema</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schema for validating upstream server configuration.&quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">command</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># For stdio transport</span>
+    <span class="n">url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># For http transport</span>
+    <span class="c1"># Note: &#39;env&#39; field is NOT supported - environment variables should be</span>
+    <span class="c1"># set in your MCP client configuration or shell environment</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginConfigSchema</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schema for validating plugin configuration.</span>
+
+<span class="sd">    Uses a consolidated format where all fields (enabled, priority, and</span>
+<span class="sd">    plugin-specific config) are stored in the config dict.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">handler</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># Plugin handler name</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># Contains enabled, priority, and plugin-specific fields</span>
+    
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginsConfigSchema</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schema for validating all plugin configurations.</span>
+
+<span class="sd">    Uses upstream-scoped format where plugins are organized by scope</span>
+<span class="sd">    (e.g., &#39;_global&#39; for all servers, or specific server names).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">security</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">PluginConfigSchema</span><span class="p">]]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">auditing</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">PluginConfigSchema</span><span class="p">]]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">middleware</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">PluginConfigSchema</span><span class="p">]]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+</code></pre>
+<h3 id="2-dataclasses-for-internal-representation">2. Dataclasses for Internal Representation</h3>
+<p>After validation, configurations are converted to immutable dataclasses for internal use:</p>
+<ul>
+<li>Lightweight representation with no runtime dependencies</li>
+<li>Consistent with Python standard library</li>
+<li>Clear type hints for IDE support and static analysis</li>
+<li>Immutability to prevent accidental modification</li>
+</ul>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">UpstreamConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Internal representation of upstream server configuration.&quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">command</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># For stdio transport</span>
+    <span class="n">url</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># For http transport</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_schema</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="n">UpstreamConfigSchema</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;UpstreamConfig&#39;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create from validated schema.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">schema</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">command</span><span class="o">=</span><span class="n">schema</span><span class="o">.</span><span class="n">command</span><span class="p">,</span>
+            <span class="n">url</span><span class="o">=</span><span class="n">schema</span><span class="o">.</span><span class="n">url</span>
+        <span class="p">)</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Internal representation of plugin configuration.</span>
+
+<span class="sd">    Framework-level fields (enabled, priority) are stored in the config dict</span>
+<span class="sd">    alongside plugin-specific configuration, providing a single source of truth.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">handler</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># Plugin handler name</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">enabled</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get enabled state. Defaults to True if not specified.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">priority</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Get execution priority (0-100, lower = higher priority).&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;priority&quot;</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
+
+    <span class="c1"># Note: The &#39;critical&#39; flag is accessed directly from config dict</span>
+    <span class="c1"># by plugins via config.get(&quot;critical&quot;, True). See ADR-006 for details.</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_schema</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="n">PluginConfigSchema</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;PluginConfig&#39;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Create from validated schema.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">handler</span><span class="o">=</span><span class="n">schema</span><span class="o">.</span><span class="n">handler</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">schema</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="p">)</span>
+</code></pre>
+<h3 id="3-configuration-loading-pipeline">3. Configuration Loading Pipeline</h3>
+<p>The configuration pipeline follows these steps:</p>
+<ol>
+<li>Load YAML from file</li>
+<li>Parse into Pydantic schema objects for validation</li>
+<li>Convert validated schemas to internal dataclasses</li>
+<li>Use dataclass instances throughout the application</li>
+</ol>
+<pre><code class="language-python"><span class="c1"># Example configuration loading pipeline</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_config</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ProxyConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load configuration from YAML file.&quot;&quot;&quot;</span>
+    <span class="c1"># 1. Load and parse YAML</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    
+    <span class="c1"># 2. Validate with Pydantic schema</span>
+    <span class="n">config_schema</span> <span class="o">=</span> <span class="n">ProxyConfigSchema</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="p">)</span>
+    
+    <span class="c1"># 3. Convert to dataclass for internal use</span>
+    <span class="k">return</span> <span class="n">ProxyConfig</span><span class="o">.</span><span class="n">from_schema</span><span class="p">(</span><span class="n">config_schema</span><span class="p">)</span>
+</code></pre>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-pure-dataclasses-approach">Alternative 1: Pure Dataclasses Approach</h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ServerConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for an upstream MCP server.&quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">command</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">30</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate configuration after initialization.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">command</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Server command cannot be empty&quot;</span><span class="p">)</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Standard library only, no dependencies, lightweight</li>
+<li><strong>Cons</strong>: Manual validation in <code>__post_init__</code>, limited validation features, error messages not as user-friendly</li>
+</ul>
+<h3 id="alternative-2-pure-pydantic-approach">Alternative 2: Pure Pydantic Approach</h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">pydantic</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseModel</span><span class="p">,</span> <span class="n">Field</span><span class="p">,</span> <span class="n">validator</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ServerConfig</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">command</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>
+    <span class="n">timeout</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">gt</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+    
+    <span class="nd">@validator</span><span class="p">(</span><span class="s1">&#39;command&#39;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">command_not_empty</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">v</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Server command cannot be empty&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">v</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Rich validation, excellent error messages, JSON schema support</li>
+<li><strong>Cons</strong>: Additional dependency for the entire application, performance overhead</li>
+</ul>
+<h3 id="alternative-3-dictionary-based-configuration">Alternative 3: Dictionary-Based Configuration</h3>
+<pre><code class="language-python"><span class="c1"># Simple dictionary approach</span>
+<span class="n">config</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;servers&quot;</span><span class="p">:</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;server1&quot;</span><span class="p">,</span> <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;python&quot;</span><span class="p">,</span> <span class="s2">&quot;server.py&quot;</span><span class="p">]},</span>
+        <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;server2&quot;</span><span class="p">,</span> <span class="s2">&quot;command&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;node&quot;</span><span class="p">,</span> <span class="s2">&quot;server.js&quot;</span><span class="p">]}</span>
+    <span class="p">],</span>
+    <span class="s2">&quot;security&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;allowed_methods&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;ping&quot;</span><span class="p">,</span> <span class="s2">&quot;tools/list&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;rate_limit&quot;</span><span class="p">:</span> <span class="mi">100</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Simple, flexible, familiar</li>
+<li><strong>Cons</strong>: No type safety, runtime errors, hard to validate</li>
+</ul>
+<h3 id="alternative-4-configuration-classes-with-properties">Alternative 4: Configuration Classes with Properties</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">Config</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_config</span> <span class="o">=</span> <span class="n">config_dict</span>
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">servers</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;servers&#39;</span><span class="p">,</span> <span class="p">[])</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Encapsulation, lazy loading</li>
+<li><strong>Cons</strong>: No type hints, manual property implementation</li>
+</ul>
+<h3 id="alternative-5-environment-variables-only">Alternative 5: Environment Variables Only</h3>
+<pre><code class="language-python"><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+<span class="n">ALLOWED_METHODS</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s1">&#39;GATEKIT_ALLOWED_METHODS&#39;</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+<span class="n">RATE_LIMIT</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s1">&#39;GATEKIT_RATE_LIMIT&#39;</span><span class="p">,</span> <span class="s1">&#39;100&#39;</span><span class="p">))</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: 12-factor app compliance, simple deployment</li>
+<li><strong>Cons</strong>: Limited structure, difficult complex configurations</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Strong Input Validation</strong>: Pydantic provides robust validation with clear error messages</li>
+<li><strong>Type Safety</strong>: Compile-time checking prevents configuration errors through the system</li>
+<li><strong>IDE Support</strong>: Auto-completion and type hints in both validation and internal models</li>
+<li><strong>Separation of Concerns</strong>: Clear distinction between external validation and internal representation</li>
+<li><strong>Extensibility</strong>: Pydantic's validation capabilities support complex plugin configuration needs</li>
+<li><strong>Testability</strong>: Easy to create and validate test configurations</li>
+<li><strong>Immutability</strong>: Internal dataclass models prevent accidental configuration changes</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Additional Dependency</strong>: Introduces Pydantic as a project dependency</li>
+<li><strong>Conversion Overhead</strong>: Small performance cost to convert between validation and internal models</li>
+<li><strong>Two Systems to Maintain</strong>: Need to keep Pydantic schemas and dataclasses in sync</li>
+<li><strong>Learning Curve</strong>: Team must understand both Pydantic and dataclass patterns</li>
+<li><strong>Schema Evolution</strong>: Requires careful handling of breaking changes in both systems</li>
+</ul>
+<h2 id="implementation-examples">Implementation Examples</h2>
+<h3 id="configuration-loading-pipeline">Configuration Loading Pipeline</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">ConfigLoader</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;YAML configuration file loader with hybrid validation approach.&quot;&quot;&quot;</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">load_from_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ProxyConfig</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Load configuration from YAML file.&quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="c1"># 1. Load YAML content</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s1">&#39;utf-8&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="n">content</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+                
+            <span class="c1"># 2. Parse YAML into dictionary</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">content</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Configuration file is empty&quot;</span><span class="p">)</span>
+                
+            <span class="n">config_dict</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+            
+            <span class="k">if</span> <span class="n">config_dict</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Configuration file contains only comments or is empty&quot;</span><span class="p">)</span>
+                
+            <span class="c1"># 3. Validate with Pydantic schema</span>
+            <span class="n">proxy_schema</span> <span class="o">=</span> <span class="n">ProxyConfigSchema</span><span class="p">(</span><span class="o">**</span><span class="n">config_dict</span><span class="p">)</span>
+            
+            <span class="c1"># 4. Convert to dataclass for internal use</span>
+            <span class="k">return</span> <span class="n">ProxyConfig</span><span class="o">.</span><span class="n">from_schema</span><span class="p">(</span><span class="n">proxy_schema</span><span class="p">)</span>
+            
+        <span class="k">except</span> <span class="n">yaml</span><span class="o">.</span><span class="n">YAMLError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid YAML syntax: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid configuration: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error loading configuration: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre>
+<h3 id="plugin-configuration-example">Plugin Configuration Example</h3>
+<pre><code class="language-python"><span class="c1"># 1. Pydantic schema for plugin configuration validation</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginConfigSchema</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schema for validating plugin configuration.</span>
+
+<span class="sd">    Consolidated format: enabled, priority, and plugin-specific fields</span>
+<span class="sd">    are all stored in the config dict.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">handler</span><span class="p">:</span> <span class="nb">str</span>  <span class="c1"># Plugin handler name</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginsConfigSchema</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schema for validating all plugin configurations.&quot;&quot;&quot;</span>
+    <span class="n">security</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">PluginConfigSchema</span><span class="p">]]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># Upstream-scoped</span>
+    <span class="n">auditing</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">PluginConfigSchema</span><span class="p">]]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># Upstream-scoped</span>
+    <span class="n">middleware</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">PluginConfigSchema</span><span class="p">]]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># Upstream-scoped</span>
+
+<span class="c1"># 2. Dataclass for internal representation</span>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Internal dataclass representation of plugin configuration.</span>
+
+<span class="sd">    Framework-level fields (enabled, priority) are stored in the config dict</span>
+<span class="sd">    alongside plugin-specific configuration. Properties provide convenient access.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">handler</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">enabled</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">priority</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;priority&quot;</span><span class="p">,</span> <span class="mi">50</span><span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_schema</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">schema</span><span class="p">:</span> <span class="n">PluginConfigSchema</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s1">&#39;PluginConfig&#39;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">handler</span><span class="o">=</span><span class="n">schema</span><span class="o">.</span><span class="n">handler</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">=</span><span class="nb">dict</span><span class="p">(</span><span class="n">schema</span><span class="o">.</span><span class="n">config</span><span class="p">)</span>
+        <span class="p">)</span>
+
+<span class="c1"># 3. Usage example in PluginManager</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginManager</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">plugins_config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="c1"># Convert from dictionary to Pydantic model for validation</span>
+        <span class="n">plugins_schema</span> <span class="o">=</span> <span class="n">PluginsConfigSchema</span><span class="p">(</span><span class="o">**</span><span class="n">plugins_config</span><span class="p">)</span>
+        
+        <span class="c1"># Convert validated schemas to internal dataclasses</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">security_plugins_config</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">PluginConfig</span><span class="o">.</span><span class="n">from_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span> 
+            <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="n">plugins_schema</span><span class="o">.</span><span class="n">security</span>
+        <span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">auditing_plugins_config</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">PluginConfig</span><span class="o">.</span><span class="n">from_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">schema</span> <span class="ow">in</span> <span class="n">plugins_schema</span><span class="o">.</span><span class="n">auditing</span>
+        <span class="p">]</span>
+</code></pre>
+<h3 id="logging-configuration">Logging Configuration</h3>
+<p>Gatekit supports configurable logging for system events (distinct from auditing plugins which log MCP traffic):</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LoggingConfig</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Internal representation of logging configuration.&quot;&quot;&quot;</span>
+    <span class="n">level</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;INFO&quot;</span>  <span class="c1"># DEBUG, INFO, WARNING, ERROR</span>
+    <span class="n">handlers</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;stderr&quot;</span><span class="p">])</span>  <span class="c1"># stderr, file</span>
+    <span class="n">file_path</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Path</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Required if &quot;file&quot; in handlers</span>
+    <span class="n">max_file_size_mb</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">10</span>
+    <span class="n">backup_count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">5</span>
+    <span class="nb">format</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2"> - </span><span class="si">%(name)s</span><span class="s2"> - </span><span class="si">%(levelname)s</span><span class="s2"> - </span><span class="si">%(message)s</span><span class="s2">&quot;</span>
+    <span class="n">date_format</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span>
+</code></pre>
+<p>Logging configuration in YAML:</p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">logging</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;INFO&quot;</span>
+<span class="w">    </span><span class="nt">handlers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;stderr&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;file&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit.log&quot;</span><span class="w">  </span><span class="c1"># Relative to config file location</span>
+<span class="w">    </span><span class="nt">max_file_size_mb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">    </span><span class="nt">backup_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</code></pre>
+<h3 id="complete-configuration-example-yaml">Complete Configuration Example (YAML)</h3>
+<pre><code class="language-yaml"><span class="c1"># gatekit.yaml example with all sections</span>
+<span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;stdio&quot;</span><span class="w">  </span><span class="c1"># &quot;stdio&quot; or &quot;http&quot;</span>
+
+<span class="w">  </span><span class="c1"># Upstream server settings</span>
+<span class="w">  </span><span class="nt">upstream</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;python&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-m&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;mcp_server&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">restart_on_failure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_restart_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+
+<span class="w">  </span><span class="c1"># Connection timeouts</span>
+<span class="w">  </span><span class="nt">timeouts</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">connection_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30</span>
+<span class="w">    </span><span class="nt">request_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+
+<span class="w">  </span><span class="c1"># HTTP transport settings (when transport is &quot;http&quot;)</span>
+<span class="w">  </span><span class="nt">http</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;127.0.0.1&quot;</span>
+<span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8080</span>
+
+<span class="w">  </span><span class="c1"># System logging (distinct from auditing)</span>
+<span class="w">  </span><span class="nt">logging</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;INFO&quot;</span>
+<span class="w">    </span><span class="nt">handlers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;stderr&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="w">  </span><span class="c1"># Plugin configuration section (upstream-scoped)</span>
+<span class="w">  </span><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># Security plugins</span>
+<span class="w">    </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">_global</span><span class="p">:</span><span class="w">  </span><span class="c1"># Global plugins apply to all upstreams</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">          </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">            </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">            </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># Default: fail-closed on errors</span>
+<span class="w">            </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span>
+
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_secrets_filter&quot;</span>
+<span class="w">          </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">            </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+<span class="w">            </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Opt-out: log errors but continue</span>
+<span class="w">            </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span>
+
+<span class="w">    </span><span class="c1"># Auditing plugins</span>
+<span class="w">    </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;file_auditing&quot;</span>
+<span class="w">          </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">            </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">            </span><span class="nt">file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;gatekit.log&quot;</span>
+<span class="w">            </span><span class="nt">max_size_mb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">            </span><span class="nt">format</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;json&quot;</span><span class="w">  </span><span class="c1"># json or text</span>
+
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;database_logger&quot;</span>
+<span class="w">          </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Disabled plugin</span>
+<span class="w">            </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">            </span><span class="nt">connection_string</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;sqlite:///audit.db&quot;</span>
+<span class="w">            </span><span class="nt">batch_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+</code></pre>
+<h3 id="environment-variables">Environment Variables</h3>
+<p><strong>Note</strong>: Environment variable overrides for configuration (<code>AG_</code> prefix) are <strong>not currently implemented</strong>. This was a planned feature that has not been built yet.</p>
+<p>For environment variables needed by upstream MCP servers:</p>
+<ul>
+<li>Set them in your shell environment before running Gatekit</li>
+<li>Or configure them in your MCP client's server configuration</li>
+<li>Gatekit upstream configurations do NOT support an <code>env</code> field</li>
+</ul>
+<h3 id="schema-evolution-strategy">Schema Evolution Strategy</h3>
+<p>Our hybrid approach facilitates configuration schema evolution through version tracking and migration functions:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">ProxyConfigSchema</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Schema for proxy configuration with version support.&quot;&quot;&quot;</span>
+    <span class="n">version</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;1.0&quot;</span>
+    <span class="n">transport</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">upstream</span><span class="p">:</span> <span class="n">UpstreamConfigSchema</span>
+    <span class="n">timeouts</span><span class="p">:</span> <span class="n">TimeoutConfigSchema</span>
+    <span class="n">http</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">HttpConfigSchema</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">plugins</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">PluginsConfigSchema</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    
+    <span class="nd">@validator</span><span class="p">(</span><span class="s1">&#39;version&#39;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_version</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate configuration version.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">v</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;0.9&quot;</span><span class="p">,</span> <span class="s2">&quot;1.0&quot;</span><span class="p">]:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported configuration version: </span><span class="si">{</span><span class="n">v</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">v</span>
+    
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_migrations</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Apply migrations based on configuration version.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">version</span> <span class="o">==</span> <span class="s2">&quot;0.9&quot;</span><span class="p">:</span>
+            <span class="c1"># Convert v0.9 to v1.0 format</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s1">&#39;plugins&#39;</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">plugins</span> <span class="o">=</span> <span class="n">PluginsConfigSchema</span><span class="p">()</span>
+            <span class="c1"># Other migration logic...</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">version</span> <span class="o">=</span> <span class="s2">&quot;1.0&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span>
+</code></pre>
+<h2 id="testing-strategy">Testing Strategy</h2>
+<p>The hybrid configuration system can be thoroughly tested at multiple levels:</p>
+<pre><code class="language-python"><span class="c1"># Unit testing the validation layer</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_plugin_config_schema_validation</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test Pydantic validation for plugin configuration.&quot;&quot;&quot;</span>
+    <span class="c1"># Valid configuration (consolidated format)</span>
+    <span class="n">valid_config</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;handler&quot;</span><span class="p">:</span> <span class="s2">&quot;test_plugin&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;config&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enabled&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;priority&quot;</span><span class="p">:</span> <span class="mi">50</span><span class="p">,</span> <span class="s2">&quot;key&quot;</span><span class="p">:</span> <span class="s2">&quot;value&quot;</span><span class="p">}</span>
+    <span class="p">}</span>
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">PluginConfigSchema</span><span class="p">(</span><span class="o">**</span><span class="n">valid_config</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">schema</span><span class="o">.</span><span class="n">handler</span> <span class="o">==</span> <span class="s2">&quot;test_plugin&quot;</span>
+    <span class="k">assert</span> <span class="n">schema</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;enabled&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">True</span>
+
+    <span class="c1"># Invalid configuration (missing required field)</span>
+    <span class="n">invalid_config</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;config&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enabled&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}}</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ValidationError</span><span class="p">):</span>
+        <span class="n">PluginConfigSchema</span><span class="p">(</span><span class="o">**</span><span class="n">invalid_config</span><span class="p">)</span>
+
+<span class="c1"># Testing the conversion to internal dataclasses</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_plugin_config_conversion</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test conversion from schema to dataclass.&quot;&quot;&quot;</span>
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">PluginConfigSchema</span><span class="p">(</span>
+        <span class="n">handler</span><span class="o">=</span><span class="s2">&quot;test_plugin&quot;</span><span class="p">,</span>
+        <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;enabled&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;priority&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">,</span> <span class="s2">&quot;setting&quot;</span><span class="p">:</span> <span class="mi">123</span><span class="p">}</span>
+    <span class="p">)</span>
+    <span class="n">dataclass_config</span> <span class="o">=</span> <span class="n">PluginConfig</span><span class="o">.</span><span class="n">from_schema</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">dataclass_config</span><span class="p">,</span> <span class="n">PluginConfig</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">dataclass_config</span><span class="o">.</span><span class="n">handler</span> <span class="o">==</span> <span class="s2">&quot;test_plugin&quot;</span>
+    <span class="k">assert</span> <span class="n">dataclass_config</span><span class="o">.</span><span class="n">enabled</span> <span class="ow">is</span> <span class="kc">False</span>  <span class="c1"># Property access</span>
+    <span class="k">assert</span> <span class="n">dataclass_config</span><span class="o">.</span><span class="n">priority</span> <span class="o">==</span> <span class="mi">30</span>  <span class="c1"># Property access</span>
+    <span class="k">assert</span> <span class="n">dataclass_config</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;setting&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">123</span>
+
+<span class="c1"># Integration testing with YAML files</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_config_loading_from_yaml</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test loading configuration from YAML file.&quot;&quot;&quot;</span>
+    <span class="n">config_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;config.yaml&quot;</span>
+    <span class="n">config_file</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">    proxy:</span>
+<span class="s2">      transport: stdio</span>
+<span class="s2">      upstream:</span>
+<span class="s2">        command: [&quot;python&quot;, &quot;-m&quot;, &quot;server&quot;]</span>
+<span class="s2">      timeouts:</span>
+<span class="s2">        connection_timeout: 30</span>
+<span class="s2">        request_timeout: 60</span>
+<span class="s2">      plugins:</span>
+<span class="s2">        security:</span>
+<span class="s2">          _global:</span>
+<span class="s2">            - handler: test_plugin</span>
+<span class="s2">              config:</span>
+<span class="s2">                enabled: true</span>
+<span class="s2">                priority: 50</span>
+<span class="s2">                mode: test</span>
+<span class="s2">    &quot;&quot;&quot;</span><span class="p">)</span>
+
+    <span class="n">config</span> <span class="o">=</span> <span class="n">ConfigLoader</span><span class="p">()</span><span class="o">.</span><span class="n">load_from_file</span><span class="p">(</span><span class="n">config_file</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">config</span><span class="o">.</span><span class="n">transport</span> <span class="o">==</span> <span class="s2">&quot;stdio&quot;</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">plugins</span><span class="o">.</span><span class="n">security</span><span class="p">[</span><span class="s2">&quot;_global&quot;</span><span class="p">])</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="k">assert</span> <span class="n">config</span><span class="o">.</span><span class="n">plugins</span><span class="o">.</span><span class="n">security</span><span class="p">[</span><span class="s2">&quot;_global&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">handler</span> <span class="o">==</span> <span class="s2">&quot;test_plugin&quot;</span>
+    <span class="k">assert</span> <span class="n">config</span><span class="o">.</span><span class="n">plugins</span><span class="o">.</span><span class="n">security</span><span class="p">[</span><span class="s2">&quot;_global&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">enabled</span> <span class="ow">is</span> <span class="kc">True</span>
+</code></pre>
+<h2 id="review-and-evolution">Review and Evolution</h2>
+<p>This hybrid configuration management approach addresses the needs of both stability (through dataclasses) and flexibility (through Pydantic schemas). It provides a solid foundation for Gatekit's configuration requirements while enabling the extensibility needed for plugins.</p>
+<h3 id="key-benefits-realized">Key Benefits Realized</h3>
+<ul>
+<li><strong>Type Safety</strong> throughout the configuration pipeline</li>
+<li><strong>Clear Error Messages</strong> for configuration issues</li>
+<li><strong>Extensibility</strong> for plugin configuration</li>
+<li><strong>Separation of Concerns</strong> between validation and internal representation</li>
+</ul>
+<h3 id="additional-considerations">Additional Considerations</h3>
+<ul>
+<li>Configuration update API for runtime changes</li>
+<li>Schema versioning for backward compatibility as the system evolves</li>
+<li>Generating JSON schema from Pydantic models for configuration documentation</li>
+<li>Performance impact of the validation and conversion process</li>
+</ul>
+<p>This approach may need adjustment when:</p>
+<ul>
+<li>Configuration schema complexity increases significantly</li>
+<li>New validation requirements emerge that are challenging to implement</li>
+<li>Performance profiling indicates overhead concerns</li>
+<li>Additional configuration sources beyond YAML files are needed</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

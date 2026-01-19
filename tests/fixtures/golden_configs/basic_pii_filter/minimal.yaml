@@ -1,0 +1,12 @@
+handler: basic_pii_filter
+category: security
+description: >-
+  Disabled baseline to ensure schema defaults work when the plugin is turned off
+  globally.
+config:
+  enabled: false
+  critical: true
+  priority: 50
+  action: redact
+  pii_types: {}
+  scan_base64: false

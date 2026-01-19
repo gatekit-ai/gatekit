@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-004: Error Handling Strategy - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit operates as a security proxy in the MCP ecosystem, requiring robust error handling for:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-004-error-handling-strategy">ADR-004: Error Handling Strategy</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit operates as a security proxy in the MCP ecosystem, requiring robust error handling for:</p>
+<ol>
+<li><strong>Protocol Compliance</strong>: Must return proper JSON-RPC 2.0 error responses</li>
+<li><strong>Security Isolation</strong>: Errors from upstream servers must be sanitized</li>
+<li><strong>Debugging Support</strong>: Developers need actionable error information</li>
+<li><strong>Reliability</strong>: System should gracefully handle various failure modes</li>
+<li><strong>Monitoring</strong>: Operations teams need visibility into error patterns</li>
+</ol>
+<p>The error handling strategy will impact security, usability, and maintainability throughout the system.</p>
+<h2 id="decision">Decision</h2>
+<p>We will implement a <strong>structured error handling strategy</strong> using JSON-RPC 2.0 error codes with Gatekit-specific extensions:</p>
+<pre><code class="language-python"><span class="c1"># Gatekit-specific error codes (see gatekit/protocol/errors.py)</span>
+<span class="c1"># Uses IntEnum for type safety</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MCPErrorCodes</span><span class="p">(</span><span class="n">IntEnum</span><span class="p">):</span>
+    <span class="c1"># Standard JSON-RPC error codes</span>
+    <span class="n">PARSE_ERROR</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32700</span>
+    <span class="n">INVALID_REQUEST</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32600</span>
+    <span class="n">METHOD_NOT_FOUND</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32601</span>
+    <span class="n">INVALID_PARAMS</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32602</span>
+    <span class="n">INTERNAL_ERROR</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32603</span>
+
+    <span class="c1"># Gatekit-specific error codes (-32099 to -32000 per JSON-RPC spec)</span>
+    <span class="n">SECURITY_VIOLATION</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32000</span>
+    <span class="n">CONFIGURATION_ERROR</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32001</span>
+    <span class="n">PLUGIN_LOADING_ERROR</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32002</span>
+    <span class="n">PERMISSION_ERROR</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32003</span>
+    <span class="n">UPSTREAM_UNAVAILABLE</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32004</span>
+    <span class="n">AUDITING_FAILURE</span> <span class="o">=</span> <span class="o">-</span><span class="mi">32005</span>
+</code></pre>
+<h3 id="key-principles">Key Principles</h3>
+<ol>
+<li><strong>Protocol Compliance</strong>: All errors follow JSON-RPC 2.0 specification</li>
+<li><strong>Security-First</strong>: Never leak sensitive information in error messages</li>
+<li><strong>Structured Data</strong>: Consistent error format with codes and details</li>
+<li><strong>Contextual Information</strong>: Include relevant context for debugging</li>
+<li><strong>Graceful Degradation</strong>: System continues operating despite errors</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-simple-exception-propagation">Alternative 1: Simple Exception Propagation</h3>
+<pre><code class="language-python"><span class="c1"># Just let Python exceptions bubble up</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">server</span><span class="o">.</span><span class="n">request</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="k">raise</span> <span class="n">e</span>  <span class="c1"># Raw exception propagation</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Simple, preserves full error details</li>
+<li><strong>Cons</strong>: Breaks JSON-RPC compliance, potential security leaks</li>
+</ul>
+<h3 id="alternative-2-generic-error-responses">Alternative 2: Generic Error Responses</h3>
+<pre><code class="language-python"><span class="c1"># Always return same generic error</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">handle_error</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;code&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="s2">&quot;An error occurred&quot;</span><span class="p">}}</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Maximum security, simple implementation</li>
+<li><strong>Cons</strong>: Poor debugging experience, no actionable information</li>
+</ul>
+<h3 id="alternative-3-http-style-status-codes">Alternative 3: HTTP-Style Status Codes</h3>
+<pre><code class="language-python"><span class="c1"># Use HTTP status codes instead of JSON-RPC</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GatekitError</span><span class="p">:</span>
+    <span class="n">BAD_REQUEST</span> <span class="o">=</span> <span class="mi">400</span>
+    <span class="n">UNAUTHORIZED</span> <span class="o">=</span> <span class="mi">401</span>
+    <span class="n">FORBIDDEN</span> <span class="o">=</span> <span class="mi">403</span>
+    <span class="n">INTERNAL_ERROR</span> <span class="o">=</span> <span class="mi">500</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Familiar to web developers</li>
+<li><strong>Cons</strong>: Doesn't follow JSON-RPC 2.0 specification</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Protocol Compliance</strong>: Follows JSON-RPC 2.0 error specification exactly</li>
+<li><strong>Security</strong>: Controlled error information prevents information leakage</li>
+<li><strong>Debugging</strong>: Structured errors with codes enable targeted debugging</li>
+<li><strong>Monitoring</strong>: Error codes allow for meaningful metrics and alerting</li>
+<li><strong>Client Support</strong>: Clients can handle errors programmatically</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Complexity</strong>: More code to handle error categorization and formatting</li>
+<li><strong>Maintenance</strong>: Error codes must be documented and maintained</li>
+<li><strong>Potential Over-Engineering</strong>: May be more structure than needed initially</li>
+</ul>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<h3 id="error-response-format">Error Response Format</h3>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;jsonrpc&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">-32003</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Validation failed&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;details&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Request missing required &#39;method&#39; field&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;request_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;req_123&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;YYYY-MM-DDTHH:MM:SSZ&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="p">}</span>
+</code></pre>
+<h3 id="error-response-creation">Error Response Creation</h3>
+<pre><code class="language-python"><span class="c1"># Error responses are created via create_error_response() helper</span>
+<span class="c1"># Error handling is distributed throughout the codebase rather than centralized</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_error_response</span><span class="p">(</span>
+    <span class="n">request_id</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]],</span>
+    <span class="n">code</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create a JSON-RPC error response.&quot;&quot;&quot;</span>
+    <span class="n">error_dict</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;code&quot;</span><span class="p">:</span> <span class="n">code</span><span class="p">,</span> <span class="s2">&quot;message&quot;</span><span class="p">:</span> <span class="n">message</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">data</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">error_dict</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span>
+    <span class="k">return</span> <span class="n">MCPResponse</span><span class="p">(</span><span class="n">jsonrpc</span><span class="o">=</span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span> <span class="nb">id</span><span class="o">=</span><span class="n">request_id</span><span class="p">,</span> <span class="n">error</span><span class="o">=</span><span class="n">error_dict</span><span class="p">)</span>
+
+<span class="c1"># Example usage (always use named parameters for clarity):</span>
+<span class="n">response</span> <span class="o">=</span> <span class="n">create_error_response</span><span class="p">(</span>
+    <span class="n">request_id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+    <span class="n">code</span><span class="o">=</span><span class="n">MCPErrorCodes</span><span class="o">.</span><span class="n">INVALID_PARAMS</span><span class="p">,</span>
+    <span class="n">message</span><span class="o">=</span><span class="s2">&quot;Tool call missing required &#39;name&#39; parameter&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="security-considerations">Security Considerations</h3>
+<ul>
+<li><strong>Information Filtering</strong>: Remove stack traces and internal paths from client responses</li>
+<li><strong>Error Logging</strong>: Full error details logged internally for debugging</li>
+<li><strong>Rate Limiting</strong>: Prevent error-based enumeration attacks</li>
+<li><strong>Context Sanitization</strong>: Remove sensitive data from error context</li>
+</ul>
+<h3 id="error-categories">Error Categories</h3>
+<h4 id="transport-errors">Transport Errors</h4>
+<ul>
+<li>Connection failures to upstream servers</li>
+<li>Timeout errors</li>
+<li>Protocol-level communication issues</li>
+</ul>
+<h4 id="validation-errors">Validation Errors</h4>
+<ul>
+<li>Malformed JSON-RPC requests</li>
+<li>Missing required fields</li>
+<li>Invalid parameter types</li>
+</ul>
+<h4 id="security-errors">Security Errors</h4>
+<ul>
+<li>Blocked requests due to security policies</li>
+<li>Authentication failures</li>
+<li>Authorization violations</li>
+</ul>
+<h4 id="internal-errors">Internal Errors</h4>
+<ul>
+<li>Unexpected system failures</li>
+<li>Configuration errors</li>
+<li>Resource exhaustion</li>
+</ul>
+<h3 id="monitoring-and-observability">Monitoring and Observability</h3>
+<p>Error tracking is handled through:</p>
+<ul>
+<li><strong>Auditing plugins</strong>: Log all requests/responses including errors (see <code>gatekit/plugins/auditing/</code>)</li>
+<li><strong>Processing pipeline</strong>: Full visibility into plugin decisions and transformations</li>
+<li><strong>Structured logging</strong>: Errors logged with context for debugging</li>
+</ul>
+<p>Note: Prometheus-style metrics are not currently implemented but could be added as a future enhancement.</p>
+<h2 id="review">Review</h2>
+<p>This decision will be reviewed when:</p>
+<ul>
+<li>JSON-RPC specification changes significantly</li>
+<li>Security requirements become more stringent</li>
+<li>Debugging needs change substantially</li>
+<li>Monitoring requirements evolve</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

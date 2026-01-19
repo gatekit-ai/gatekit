@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gatekit - A Hackable MCP Gateway</title>
+  <meta name="description" content="Gatekit is a Model Context Protocol gateway that lets you control communication between your LLM and MCP tools using a plugin architecture.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #1c2128;
+      --fg: #c9d1d9;
+      --fg-muted: #8b949e;
+      --fg-bright: #e6edf3;
+      --accent: #3670aa;
+      --accent-light: #4a8fd4;
+      --border: #30363d;
+      --code-bg: #1c2128;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff;
+        --bg-secondary: #f6f8fa;
+        --bg-tertiary: #eaeef2;
+        --fg: #1f2328;
+        --fg-muted: #656d76;
+        --fg-bright: #1f2328;
+        --border: #d1d9e0;
+        --code-bg: #f6f8fa;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; overflow-x: hidden; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 0.9em;
+      background: var(--code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 4px;
+    }
+    pre {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 0.875rem;
+      background: var(--code-bg);
+      padding: 1.25rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      overflow-x: auto;
+      max-width: 100%;
+    }
+    pre code { background: none; padding: 0; }
+    ul { margin-left: 1.25rem; }
+    li { margin-bottom: 0.35rem; }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Header */
+    header {
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-family: 'Kanit', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 400;
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .logo:hover { text-decoration: none; }
+    .logo-kit { font-weight: 600; }
+    nav a {
+      margin-left: 2rem;
+      color: var(--fg-muted);
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    nav a:hover { color: var(--fg-bright); text-decoration: none; }
+
+    /* Hero */
+    .hero {
+      padding: 4rem 0 3rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 3rem;
+      align-items: center;
+    }
+    .hero h1 {
+      font-size: 2.25rem;
+      font-weight: 600;
+      color: var(--fg-bright);
+      line-height: 1.25;
+      margin-bottom: 1.25rem;
+    }
+    .hero-desc {
+      font-size: 1.05rem;
+      color: var(--fg);
+      margin-bottom: 1.25rem;
+      line-height: 1.6;
+    }
+    .hero-list {
+      margin-bottom: 1.5rem;
+      color: var(--fg-muted);
+    }
+    .hero-list li { margin-bottom: 0.3rem; }
+    .hero-subtitle {
+      font-size: 1.1rem;
+      color: var(--fg-muted);
+      margin-bottom: 1.25rem;
+      font-weight: 500;
+    }
+    .hero-extend {
+      color: var(--fg-muted);
+      margin-bottom: 1.5rem;
+    }
+    .hero-install {
+      display: inline-block;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      padding: 0.75rem 1.25rem;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 0.95rem;
+      color: var(--fg-bright);
+      margin-bottom: 1.5rem;
+    }
+    .hero-links a {
+      display: inline-block;
+      margin-right: 1.5rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .hero-image {
+      text-align: center;
+    }
+    .hero-image a {
+      display: block;
+    }
+    .hero-image img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+    .hero-image a:hover img {
+      border-color: var(--accent);
+    }
+    .hero-image .caption {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--fg-muted);
+    }
+
+    /* Section */
+    section {
+      padding: 4rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    section h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--fg-bright);
+      margin-bottom: 1rem;
+    }
+    section > p {
+      color: var(--fg);
+      margin-bottom: 1.5rem;
+      max-width: 700px;
+    }
+
+    /* Architecture diagram */
+    .arch-diagram {
+      margin: 0 0 2rem;
+      overflow-x: auto;
+    }
+    .arch-diagram svg {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+      height: auto;
+    }
+    .arch-diagram text {
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 12px;
+      fill: var(--fg);
+    }
+    .arch-diagram .label-title {
+      font-weight: 600;
+      fill: var(--fg-bright);
+    }
+    .arch-diagram .label-sub {
+      font-size: 11px;
+      fill: var(--fg-muted);
+    }
+    .arch-diagram rect {
+      fill: var(--bg-secondary);
+      stroke: var(--border);
+      stroke-width: 1;
+    }
+    .arch-diagram .box-accent {
+      stroke: var(--accent);
+    }
+    .arch-diagram line, .arch-diagram path {
+      stroke: var(--fg-muted);
+      stroke-width: 1.5;
+      fill: none;
+    }
+    .arch-diagram .arrow {
+      fill: var(--fg-muted);
+    }
+
+    .arch-components {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-top: 2rem;
+      max-width: 800px;
+    }
+    .arch-component {
+      padding: 1rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      transition: border-color 0.15s ease;
+      cursor: pointer;
+    }
+    .arch-component:hover,
+    .arch-component.highlighted {
+      border-color: var(--accent);
+    }
+    .arch-box {
+      cursor: pointer;
+    }
+    .arch-box > rect:first-child {
+      transition: stroke 0.15s ease, stroke-width 0.15s ease;
+    }
+    .arch-box:hover > rect:first-child,
+    .arch-box.highlighted > rect:first-child {
+      stroke: var(--accent);
+      stroke-width: 2;
+    }
+    .arch-component strong {
+      display: block;
+      color: var(--fg-bright);
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+      font-size: 0.9rem;
+      margin-bottom: 0.35rem;
+    }
+    .arch-component span {
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+    }
+
+    /* Plugins - image left, categories right */
+    .plugins-layout {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 3rem;
+      align-items: start;
+      margin-top: 1.5rem;
+    }
+    .plugins-image a {
+      display: block;
+    }
+    .plugins-image img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+    .plugins-image a:hover img {
+      border-color: var(--accent);
+    }
+    .plugins-image .caption {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: var(--fg-muted);
+      text-align: center;
+    }
+    .plugins-categories {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .plugin-category {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .plugin-category h3 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--fg-bright);
+      margin-bottom: 0.5rem;
+    }
+    .plugin-category .category-note {
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+      font-style: italic;
+      margin-bottom: 0.75rem;
+    }
+    .plugin-category > p {
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+      margin-bottom: 0.75rem;
+    }
+    .plugin-category ul {
+      list-style: none;
+      margin: 0;
+      font-size: 0.875rem;
+    }
+    .plugin-category li {
+      padding: 0.35rem 0;
+      color: var(--fg);
+      margin-bottom: 0;
+    }
+    .plugin-category li strong {
+      color: var(--fg-bright);
+      font-weight: 500;
+    }
+
+    /* Custom plugins */
+    .custom-plugins {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: start;
+    }
+    .custom-plugins-text,
+    .custom-plugins-code {
+      min-width: 0;
+    }
+    .custom-plugins-text p {
+      color: var(--fg);
+      margin-bottom: 1rem;
+    }
+    .custom-plugins-text ul {
+      color: var(--fg-muted);
+    }
+
+    /* Guided Setup */
+    .guided-setup-content {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 2.5rem;
+      align-items: center;
+      margin-top: 1.5rem;
+    }
+    .guided-setup-image a {
+      display: block;
+    }
+    .guided-setup-image img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+    .guided-setup-image a:hover img {
+      border-color: var(--accent);
+    }
+    .guided-setup-text ol {
+      margin-left: 1.25rem;
+      color: var(--fg);
+    }
+    .guided-setup-text ol li {
+      margin-bottom: 0.5rem;
+    }
+
+    /* Install */
+    .install-options {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      max-width: 700px;
+      margin-top: 1.5rem;
+    }
+    .install-option {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+    }
+    .install-option h3 {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--fg-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .install-option code {
+      display: block;
+      font-size: 0.9rem;
+      color: var(--fg-bright);
+      background: none;
+      padding: 0;
+    }
+
+    /* Docs links */
+    .docs-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1rem;
+      max-width: 700px;
+    }
+    .docs-link {
+      display: block;
+      padding: 1rem 1.25rem;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-decoration: none;
+    }
+    .docs-link:hover {
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+    .docs-link strong {
+      display: block;
+      color: var(--fg-bright);
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+    .docs-link span {
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+    }
+
+    /* Footer */
+    footer {
+      padding: 2rem 0;
+      background: var(--bg-secondary);
+    }
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+    }
+    .footer-links a {
+      margin-left: 1.5rem;
+      color: var(--fg-muted);
+    }
+    .footer-links a:hover { color: var(--fg); }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-image { order: -1; }
+      .plugins-layout { grid-template-columns: 1fr; }
+      .plugins-image { order: -1; }
+      .custom-plugins { grid-template-columns: 1fr; }
+      .arch-components { grid-template-columns: 1fr; }
+      .install-options { grid-template-columns: 1fr; }
+      .docs-grid { grid-template-columns: 1fr; }
+      .guided-setup-content { grid-template-columns: 1fr; }
+      .guided-setup-image { order: -1; }
+    }
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 1.75rem; }
+      nav a { margin-left: 1rem; }
+      .footer-inner { flex-direction: column; gap: 1rem; }
+      .footer-links a { margin: 0 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container header-inner">
+    <a href="/" class="logo">Gate<span class="logo-kit">kit</span></a>
+    <nav>
+      <a href="/docs/getting-started.html">Get started</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container">
+    <div class="hero-grid">
+      <div class="hero-text">
+        <h1>A hackable MCP gateway</h1>
+        <p class="hero-subtitle" style="font-size: 0.9rem; opacity: 0.7;">Apache 2.0 licensed</p>
+        <p class="hero-desc">Gatekit is a Model Context Protocol gateway that controls traffic between your LLM and MCP tools for better visibility, security, and control.</p>
+        <p class="hero-desc"><strong>Extend it with plugins, not forks.</strong> Your customizations stay separate, so you can keep getting Gatekit updates without merge conflicts.</p>
+        <p class="hero-desc">Built-in plugins handle:</p>
+        <ul class="hero-list">
+          <li><strong>Tool management</strong> — expose only the tools you want, rename and modify descriptions for cleaner context and better discoverability</li>
+          <li><strong>Content security</strong> — catch PII and secrets before they leave your machine, defend against basic prompt injection attacks (regex-based)</li>
+          <li><strong>Audit logging</strong> — debug failures, track usage, inspect full request and response bodies</li>
+        </ul>
+        <div class="hero-install">uv tool install gatekit</div>
+        <div class="hero-links">
+          <a href="/docs/getting-started.html">Get started</a>
+          <a href="https://github.com/gatekit-ai/gatekit">View source</a>
+        </div>
+      </div>
+      <div class="hero-image">
+        <a href="images/gatekit-config-editor.png" target="_blank">
+          <img src="images/gatekit-config-editor.png" alt="Gatekit configuration editor">
+        </a>
+        <p class="caption">Gatekit configuration editor (Terminal UI)</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>How It Works</h2>
+    <p>Gatekit proxies traffic between Model Context Protocol (MCP) clients and servers. Config files define which servers to proxy and which plugins to run.</p>
+
+    <div class="arch-diagram">
+      <svg width="800" height="340" viewBox="0 0 800 340">
+        <!-- MCP Client box -->
+        <rect x="20" y="80" width="140" height="70" rx="4"/>
+        <text x="90" y="108" text-anchor="middle" class="label-title">MCP Client</text>
+        <text x="90" y="125" text-anchor="middle" class="label-sub">(Claude, Cursor)</text>
+
+        <!-- gatekit-gateway box -->
+        <g class="arch-box" data-component="gateway">
+          <rect x="260" y="60" width="180" height="110" rx="4" class="box-accent"/>
+          <text x="350" y="88" text-anchor="middle" class="label-title">gatekit-gateway</text>
+          <rect x="280" y="100" width="140" height="55" rx="3"/>
+          <text x="350" y="122" text-anchor="middle" class="label-sub">plugins</text>
+        </g>
+
+        <!-- MCP Server box -->
+        <rect x="540" y="80" width="140" height="70" rx="4"/>
+        <text x="610" y="108" text-anchor="middle" class="label-title">MCP Server(s)</text>
+        <text x="610" y="125" text-anchor="middle" class="label-sub">(filesystem, github)</text>
+
+        <!-- Arrows between boxes -->
+        <line x1="160" y1="105" x2="250" y2="105"/>
+        <polygon points="255,105 245,100 245,110" class="arrow"/>
+
+        <line x1="250" y1="125" x2="160" y2="125"/>
+        <polygon points="160,125 170,120 170,130" class="arrow"/>
+
+        <line x1="440" y1="105" x2="530" y2="105"/>
+        <polygon points="535,105 525,100 525,110" class="arrow"/>
+
+        <line x1="530" y1="125" x2="440" y2="125"/>
+        <polygon points="440,125 450,120 450,130" class="arrow"/>
+
+        <!-- Config file box -->
+        <g class="arch-box" data-component="config">
+          <rect x="260" y="230" width="180" height="100" rx="4"/>
+          <text x="350" y="255" text-anchor="middle" class="label-title">gatekit.yaml</text>
+          <text x="350" y="278" text-anchor="middle" class="label-sub">• mcp servers</text>
+          <text x="350" y="293" text-anchor="middle" class="label-sub">• security</text>
+          <text x="350" y="308" text-anchor="middle" class="label-sub">• middleware</text>
+          <text x="350" y="323" text-anchor="middle" class="label-sub">• auditing</text>
+        </g>
+
+        <!-- TUI box -->
+        <g class="arch-box" data-component="tui">
+          <rect x="540" y="255" width="120" height="55" rx="4"/>
+          <text x="600" y="280" text-anchor="middle" class="label-title">gatekit</text>
+          <text x="600" y="297" text-anchor="middle" class="label-sub">(TUI)</text>
+        </g>
+
+        <!-- Vertical line from config UP to gateway -->
+        <line x1="350" y1="230" x2="350" y2="180"/>
+        <polygon points="350,175 345,185 355,185" class="arrow"/>
+        <text x="365" y="206" class="label-sub">configures</text>
+
+        <!-- Line from TUI to config -->
+        <line x1="540" y1="282" x2="450" y2="282"/>
+        <polygon points="445,282 455,277 455,287" class="arrow"/>
+        <text x="480" y="273" class="label-sub">writes</text>
+      </svg>
+    </div>
+
+    <div class="arch-components">
+      <div class="arch-component" data-component="tui">
+        <strong>gatekit</strong>
+        <span>The TUI. Detects your MCP clients, discovers servers, and generates YAML config files.</span>
+      </div>
+      <div class="arch-component" data-component="config">
+        <strong>gatekit.yaml</strong>
+        <span>Your config. Defines upstream servers and plugins.</span>
+      </div>
+      <div class="arch-component" data-component="gateway">
+        <strong>gatekit-gateway</strong>
+        <span>The runtime. Your MCP client points here. Applies your plugins to all traffic.</span>
+      </div>
+    </div>
+
+    <p style="margin-top: 2rem;"><strong>Plugins</strong> intercept traffic between client and servers, allowing you to modify, block, or log messages:</p>
+    <ul>
+      <li><strong>Security</strong> — Block or redact sensitive content (PII, secrets)</li>
+      <li><strong>Middleware</strong> — Transform requests/responses (filter tools, rename, modify)</li>
+      <li><strong>Auditing</strong> — Log all MCP traffic for debugging or compliance</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Built-in Plugins</h2>
+    <p>Plugins intercept traffic between client and servers, allowing you to modify, block, or log messages.</p>
+    <div class="plugins-layout">
+      <div class="plugins-image">
+        <a href="images/tool-manager-modal.png" target="_blank">
+          <img src="images/tool-manager-modal.png" alt="Tool Manager configuration">
+        </a>
+        <p class="caption">Tool Manager plugin configuration</p>
+      </div>
+      <div class="plugins-categories">
+        <div class="plugin-category">
+          <h3>Middleware</h3>
+          <p>Transform requests and responses</p>
+          <ul>
+            <li><strong>Tool Manager</strong> — Filter, rename, and customize tool descriptions</li>
+            <li><strong>Call Trace</strong> — Append diagnostic info to tool responses</li>
+          </ul>
+        </div>
+        <div class="plugin-category">
+          <h3>Security</h3>
+          <p class="category-note">Regex-based pattern matching. Not a substitute for dedicated security tooling.</p>
+          <ul>
+            <li><strong>PII Filter</strong> — Detect and redact personally identifiable information</li>
+            <li><strong>Secrets Filter</strong> — Detect API keys, tokens, and other secrets</li>
+            <li><strong>Prompt Injection Filter</strong> — Detect common prompt injection patterns</li>
+          </ul>
+        </div>
+        <div class="plugin-category">
+          <h3>Auditing</h3>
+          <p>Log all MCP traffic for debugging or compliance</p>
+          <ul>
+            <li><strong>JSON Lines</strong> — Structured logs for processing</li>
+            <li><strong>CSV</strong> — Spreadsheet-compatible logs</li>
+            <li><strong>Human Readable</strong> — Plain text logs for quick review</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Custom Plugins</h2>
+    <div class="custom-plugins">
+      <div class="custom-plugins-text">
+        <p>When the built-in plugins aren't enough, write your own. Plugins intercept and modify tool calls and responses, enabling:</p>
+        <ul>
+          <li>Pruning responses to avoid context bloat</li>
+          <li>Injecting credentials into tool calls without exposing them to the LLM</li>
+          <li>Joining additional information from other data sources</li>
+          <li>Human-in-the-loop approval for dangerous actions</li>
+          <li>Response caching and deduplication</li>
+        </ul>
+      </div>
+      <div class="custom-plugins-code">
+        <pre><code>from gatekit.plugins.interfaces import MiddlewarePlugin, PluginResult
+
+class MyPlugin(MiddlewarePlugin):
+    async def process_request(self, request, server_name):
+        # Your logic here
+        return PluginResult()
+
+    async def process_response(self, request, response, server_name):
+        # Your logic here
+        return PluginResult()
+
+HANDLERS = {"my_plugin": MyPlugin}</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Guided Setup</h2>
+    <p>Run <code>gatekit</code> to launch the terminal UI. The guided setup wizard handles configuration for supported clients.</p>
+    <div class="guided-setup-content">
+      <div class="guided-setup-image">
+        <a href="images/guided-setup-wizard.png" target="_blank">
+          <img src="images/guided-setup-wizard.png" alt="Guided setup wizard showing server discovery">
+        </a>
+      </div>
+      <div class="guided-setup-text">
+        <ol>
+          <li><strong>Auto-detects</strong> MCP clients on your system (Claude Desktop, Codex, Claude Code, Cursor, Windsurf)</li>
+          <li><strong>Discovers</strong> all configured MCP servers from each client</li>
+          <li><strong>Generates</strong> a complete Gatekit configuration</li>
+          <li><strong>Provides</strong> client-specific setup instructions with copy buttons</li>
+          <li><strong>Creates</strong> restore scripts in case you want to revert</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Installation</h2>
+    <p>Requires Python 3.10+.</p>
+    <div class="install-options">
+      <div class="install-option">
+        <h3>uv (recommended)</h3>
+        <code>uv tool install gatekit</code>
+      </div>
+      <div class="install-option">
+        <h3>pipx</h3>
+        <code>pipx install gatekit</code>
+      </div>
+      <div class="install-option">
+        <h3>pip</h3>
+        <code>pip install gatekit</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Documentation</h2>
+    <div class="docs-grid">
+      <a href="/docs/getting-started.html" class="docs-link">
+        <strong>Getting Started</strong>
+        <span>Installation, configuration, first run</span>
+      </a>
+      <a href="/docs/concepts/configuration.html" class="docs-link">
+        <strong>Configuration Specification</strong>
+        <span>Complete YAML schema documentation</span>
+      </a>
+      <a href="/docs/reference/builtin-plugins.html" class="docs-link">
+        <strong>Built-in Plugins</strong>
+        <span>All included plugins with config options</span>
+      </a>
+      <a href="/docs/plugins/development-guide.html" class="docs-link">
+        <strong>Plugin Development Guide</strong>
+        <span>Write custom security, middleware, or auditing plugins</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Roadmap and Limitations</h2>
+    <p>Gatekit currently only supports local stdio servers and regex pattern matching based security and privacy filters.</p>
+    <p style="margin-top: 0.75rem;">Planned features include:</p>
+    <ul style="margin-top: 1rem;">
+      <li><strong>HTTP transport</strong> — Connect to remote MCP servers</li>
+      <li><strong>Hot-reload</strong> — Change config without restarting the gateway</li>
+      <li><strong>Enhanced detection</strong> — Support for best-in-class third-party security and privacy solutions like Microsoft Presidio, Yelp Secrets, etc.</li>
+      <li><strong>Token usage estimation</strong> — Track token consumption by server and tool</li>
+      <li><strong>Response pruning</strong> — Built-in response trimming functionality to help reduce context bloat</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>Feedback</h2>
+    <p>Have feedback on the roadmap? <a href="https://github.com/gatekit-ai/gatekit/discussions">Join the discussion</a>. Found a bug? <a href="https://github.com/gatekit-ai/gatekit/issues">Open an issue</a>. For anything else: <a href="mailto:dbright@gatekit.ai">dbright@gatekit.ai</a></p>
+  </div>
+</section>
+
+<footer>
+  <div class="container footer-inner">
+    <span>Apache 2.0 License</span>
+    <div class="footer-links">
+      <a href="/docs/">Docs</a>
+      <a href="/decisions/">ADRs</a>
+      <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Cross-highlight architecture diagram and description cards
+  document.querySelectorAll('[data-component]').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      document.querySelectorAll(`[data-component="${el.dataset.component}"]`)
+        .forEach(target => target.classList.add('highlighted'));
+    });
+    el.addEventListener('mouseleave', () => {
+      document.querySelectorAll('.highlighted')
+        .forEach(target => target.classList.remove('highlighted'));
+    });
+  });
+</script>
+
+</body>
+</html>

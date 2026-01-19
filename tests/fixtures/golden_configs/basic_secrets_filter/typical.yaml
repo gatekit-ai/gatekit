@@ -1,0 +1,25 @@
+handler: basic_secrets_filter
+category: security
+description: >-
+  Balanced deployment that blocks common API tokens and enables entropy detection.
+config:
+  enabled: true
+  critical: true
+  priority: 30
+  action: block
+  secret_types:
+    aws_access_keys:
+      enabled: true
+    github_tokens:
+      enabled: true
+    google_api_keys:
+      enabled: true
+    jwt_tokens:
+      enabled: true
+    slack_tokens:
+      enabled: false
+  entropy_detection:
+    enabled: true
+    threshold: 4.8
+    min_length: 25
+  scan_base64: false

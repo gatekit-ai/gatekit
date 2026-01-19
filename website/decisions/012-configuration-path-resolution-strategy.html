@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-012: Configuration Path Resolution Strategy - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit configurations contained relative paths that were resolved relative to the current working directory where the MCP client started Gatekit. This creat...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-012-configuration-path-resolution-strategy">ADR-012: Configuration Path Resolution Strategy</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit configurations contained relative paths that were resolved relative to the current working directory where the MCP client started Gatekit. This created several problems:</p>
+<ol>
+<li><strong>Unpredictable behavior</strong>: Users couldn't reliably use relative paths because they don't control the working directory when Gatekit runs as an MCP server</li>
+<li><strong>Tutorial failures</strong>: Sample configurations with relative paths failed when run from different directories</li>
+<li><strong>Poor portability</strong>: Configurations weren't portable across different deployment scenarios</li>
+<li><strong>User confusion</strong>: Users had to use absolute paths, which aren't portable across systems</li>
+</ol>
+<h3 id="technical-challenge">Technical Challenge</h3>
+<p>MCP servers like Gatekit are typically started by MCP clients (like Claude Desktop) with unpredictable working directories. The working directory depends on:</p>
+<ul>
+<li>How the MCP client was launched</li>
+<li>The client's internal working directory management</li>
+<li>The user's system configuration</li>
+</ul>
+<p>This made relative paths in configuration files unreliable and created a poor user experience.</p>
+<h2 id="decision">Decision</h2>
+<p>We will implement <strong>config-relative path resolution</strong> where all relative paths in configuration files are resolved relative to the configuration file's location, not the current working directory.</p>
+<h3 id="key-components">Key Components</h3>
+<ol>
+<li><p><strong>Path Resolution Utility Module</strong> (<code>gatekit/utils/paths.py</code>)</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">resolve_config_path</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config_dir</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve path relative to config directory with home expansion support.&quot;&quot;&quot;</span>
+</code></pre>
+</li>
+<li><p><strong>ConfigLoader Enhancement</strong></p>
+<ul>
+<li>Store the absolute path of the configuration file's directory</li>
+<li>Pass config directory to all components that need path resolution</li>
+<li>Resolve the config file path itself to absolute before loading</li>
+</ul>
+</li>
+<li><p><strong>Component Integration</strong></p>
+<ul>
+<li>LoggingConfig resolves log file paths relative to config directory</li>
+<li>FileAuditingPlugin resolves output_file relative to config directory</li>
+<li>PluginManager passes config directory to all plugins</li>
+</ul>
+</li>
+<li><p><strong>Path Resolution Rules</strong></p>
+<ul>
+<li><strong>Absolute paths</strong>: Used unchanged (e.g., <code>/var/log/audit.log</code>)</li>
+<li><strong>Home directory paths</strong>: Expanded (e.g., <code>~/logs/audit.log</code> → <code>/Users/username/logs/audit.log</code>)</li>
+<li><strong>Relative paths</strong>: Resolved relative to config directory (e.g., <code>logs/audit.log</code> → <code>/config/dir/logs/audit.log</code>)</li>
+</ul>
+</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-working-directory-normalization">Alternative 1: Working Directory Normalization</h3>
+<pre><code class="language-python"><span class="c1"># Set working directory to config file location</span>
+<span class="n">os</span><span class="o">.</span><span class="n">chdir</span><span class="p">(</span><span class="n">config_file</span><span class="o">.</span><span class="n">parent</span><span class="p">)</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Global state changes can affect other parts of the system</li>
+<li>Thread safety concerns in async environment</li>
+<li>Doesn't work well with multiple config files</li>
+<li>Can break other file operations that expect original working directory</li>
+</ul>
+<h3 id="alternative-2-environment-variable-based-paths">Alternative 2: Environment Variable Based Paths</h3>
+<pre><code class="language-yaml"><span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;${GATEKIT_CONFIG_DIR}/logs/audit.log&quot;</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Requires environment variable management</li>
+<li>More complex for users to understand and configure</li>
+<li>Platform-specific environment variable handling</li>
+<li>Doesn't solve the core issue of predictable path resolution</li>
+</ul>
+<h3 id="alternative-3-configuration-preprocessing">Alternative 3: Configuration Preprocessing</h3>
+<pre><code class="language-python"><span class="c1"># Expand all paths during config loading</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">preprocess_config</span><span class="p">(</span><span class="n">config_dict</span><span class="p">,</span> <span class="n">base_dir</span><span class="p">):</span>
+    <span class="c1"># Walk config tree and expand all path-like values</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Requires heuristics to identify which values are paths</li>
+<li>Risk of false positives (non-path strings that look like paths)</li>
+<li>More complex than explicit path resolution</li>
+<li>Harder to debug when path resolution goes wrong</li>
+</ul>
+<h3 id="alternative-4-absolute-path-only">Alternative 4: Absolute Path Only</h3>
+<pre><code class="language-yaml"><span class="c1"># Force users to use only absolute paths</span>
+<span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;/absolute/path/to/logs/audit.log&quot;</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Poor user experience - configurations aren't portable</li>
+<li>Makes development and testing harder</li>
+<li>Doesn't follow principle of least surprise</li>
+<li>Examples and tutorials become system-specific</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Predictable behavior</strong>: Same configuration works regardless of working directory</li>
+<li><strong>Portable configurations</strong>: Relative paths work consistently across deployments</li>
+<li><strong>Better user experience</strong>: Users can use relative paths confidently</li>
+<li><strong>Tutorial reliability</strong>: Example configurations work from any directory</li>
+<li><strong>Backward compatibility</strong>: Absolute paths continue to work unchanged</li>
+<li><strong>Cross-platform support</strong>: Path resolution works on Windows, macOS, and Linux</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Implementation complexity</strong>: Additional path resolution logic throughout codebase</li>
+<li><strong>Testing overhead</strong>: Need to test path resolution in multiple components</li>
+<li><strong>Migration effort</strong>: Existing configurations need updates to use relative paths</li>
+<li><strong>Debugging complexity</strong>: Path resolution can add a layer of indirection</li>
+</ul>
+<h3 id="risk-mitigation">Risk Mitigation</h3>
+<ul>
+<li><strong>Comprehensive testing</strong>: Tests covering all path resolution scenarios</li>
+<li><strong>Graceful fallbacks</strong>: Invalid paths produce clear error messages</li>
+<li><strong>Clear documentation</strong>: Path resolution rules documented with examples</li>
+<li><strong>Backward compatibility</strong>: Absolute paths and home directory paths still work</li>
+<li><strong>Environment variable expansion</strong>: <code>${VAR}</code> syntax supported in paths</li>
+</ul>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="path-resolution-pipeline">Path Resolution Pipeline</h3>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">resolve_config_path</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config_dir</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+    <span class="c1"># 1. Validate input</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">path</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Path cannot be empty&quot;</span><span class="p">)</span>
+    
+    <span class="c1"># 2. Expand home directory if present</span>
+    <span class="n">expanded_path</span> <span class="o">=</span> <span class="n">expand_user_path</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span>
+    
+    <span class="c1"># 3. If already absolute, return as-is</span>
+    <span class="k">if</span> <span class="n">expanded_path</span><span class="o">.</span><span class="n">is_absolute</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">expanded_path</span>
+    
+    <span class="c1"># 4. Resolve relative to config directory</span>
+    <span class="n">config_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">config_dir</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">config_dir</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="n">config_dir</span>
+    <span class="n">resolved_path</span> <span class="o">=</span> <span class="n">config_path</span> <span class="o">/</span> <span class="n">expanded_path</span>
+    <span class="k">return</span> <span class="n">resolved_path</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
+</code></pre>
+<h3 id="integration-points">Integration Points</h3>
+<ol>
+<li><strong>ConfigLoader</strong>: Stores config directory and passes to components</li>
+<li><strong>LoggingConfig</strong>: Resolves <code>file_path</code> during schema conversion</li>
+<li><strong>PluginManager</strong>: Passes config directory to all plugins</li>
+<li><strong>FileAuditingPlugin</strong>: Resolves <code>output_file</code> during initialization</li>
+</ol>
+<h3 id="configuration-examples">Configuration Examples</h3>
+<pre><code class="language-yaml"><span class="c1"># Before (unreliable)</span>
+<span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;./logs/gatekit.log&quot;</span><span class="w">  </span><span class="c1"># Depends on working directory</span>
+
+<span class="c1"># After (reliable)</span>
+<span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit.log&quot;</span><span class="w">    </span><span class="c1"># Relative to config file location</span>
+</code></pre>
+<h2 id="review">Review</h2>
+<p>This decision will be reviewed when:</p>
+<ul>
+<li>Path resolution performance becomes a bottleneck</li>
+<li>Cross-platform compatibility issues arise</li>
+<li>User feedback indicates configuration complexity</li>
+<li>New configuration sources are added (environment variables, remote configs, etc.)</li>
+</ul>
+<p>The config-relative path resolution strategy provides a solid foundation for reliable, portable configurations while maintaining backward compatibility and following user expectations.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

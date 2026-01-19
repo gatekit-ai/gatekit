@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-019: Plugin Equality Principle - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit uses a plugin-based architecture with three categories of plugins:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-019-plugin-equality-principle">ADR-019: Plugin Equality Principle</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit uses a plugin-based architecture with three categories of plugins:</p>
+<ul>
+<li><strong>Security plugins</strong>: Make allow/block decisions on requests</li>
+<li><strong>Middleware plugins</strong>: Transform or complete requests</li>
+<li><strong>Auditing plugins</strong>: Log and observe traffic</li>
+</ul>
+<p>A key design question: should plugins that ship with Gatekit receive special treatment over user-created plugins? Many systems have &quot;blessed&quot; built-in components with access to private APIs or special validation rules.</p>
+<h3 id="the-temptation">The Temptation</h3>
+<p>It would be easier to hardcode plugin names for common operations:</p>
+<pre><code class="language-python"><span class="c1"># Tempting but wrong</span>
+<span class="k">if</span> <span class="n">plugin</span><span class="o">.</span><span class="n">handler</span> <span class="o">==</span> <span class="s2">&quot;tool_manager&quot;</span><span class="p">:</span>
+    <span class="c1"># special handling for this common plugin</span>
+
+<span class="n">SERVER_AWARE_PLUGINS</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;tool_manager&#39;</span><span class="p">,</span> <span class="s1">&#39;filesystem_server&#39;</span><span class="p">}</span>  <span class="c1"># hardcoded list</span>
+</code></pre>
+<p>This creates a two-tier system where built-in plugins have capabilities that user plugins cannot replicate.</p>
+<h2 id="decision">Decision</h2>
+<p><strong>All plugins are first-class citizens.</strong> Plugins that ship with Gatekit receive NO special treatment.</p>
+<h3 id="core-rules">Core Rules</h3>
+<ol>
+<li><p><strong>No hardcoded plugin names</strong> - Core code must never contain hardcoded references to specific plugin names in validation, configuration, or business logic</p>
+</li>
+<li><p><strong>Dynamic discovery only</strong> - Use the plugin discovery system to find and interact with plugins</p>
+</li>
+<li><p><strong>Metadata-driven behavior</strong> - Plugins declare their own capabilities via class attributes:</p>
+<ul>
+<li><code>DISPLAY_SCOPE</code>: Whether plugin is <code>global</code>, <code>server_aware</code>, or <code>server_specific</code></li>
+<li><code>DISPLAY_NAME</code>: Human-readable name for TUI</li>
+<li><code>HANDLERS</code>: Dictionary mapping handler names to plugin classes</li>
+</ul>
+</li>
+<li><p><strong>Equal validation</strong> - Built-in and user plugins must pass through identical validation logic</p>
+</li>
+<li><p><strong>Same interfaces</strong> - Built-in plugins use the same interfaces and base classes as user plugins</p>
+</li>
+</ol>
+<h2 id="rationale">Rationale</h2>
+<h3 id="security-credibility">Security Credibility</h3>
+<p>Gatekit is security software. Users who deploy security tools are rightfully skeptical of hidden behaviors. By ensuring all plugins—including built-in ones—use the same discovery and validation paths, we demonstrate that:</p>
+<ul>
+<li>No special backdoors exist for built-in plugins</li>
+<li>All code paths are equally validated</li>
+<li>User plugins can achieve the same capabilities</li>
+</ul>
+<h3 id="extensibility">Extensibility</h3>
+<p>When users create plugins, they should be able to replicate any capability of built-in plugins. If <code>tool_manager</code> can declare itself as <code>server_aware</code>, user plugins must be able to do the same.</p>
+<h3 id="maintainability">Maintainability</h3>
+<p>Hardcoded lists become maintenance burdens. When new plugins are added, every hardcoded list must be updated. Metadata-driven discovery eliminates this class of bugs.</p>
+<h3 id="testability">Testability</h3>
+<p>Generic, metadata-driven code is easier to test. Instead of testing each hardcoded plugin name, tests verify that the discovery system works correctly for any plugin.</p>
+<h2 id="implementation-guidelines">Implementation Guidelines</h2>
+<h3 id="discovering-plugin-capabilities">Discovering Plugin Capabilities</h3>
+<pre><code class="language-python"><span class="c1"># CORRECT: Dynamic discovery via metadata</span>
+<span class="n">plugin_class</span> <span class="o">=</span> <span class="n">discover_plugin_class</span><span class="p">(</span><span class="n">plugin</span><span class="o">.</span><span class="n">handler</span><span class="p">)</span>
+<span class="n">display_scope</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">plugin_class</span><span class="p">,</span> <span class="s1">&#39;DISPLAY_SCOPE&#39;</span><span class="p">,</span> <span class="s1">&#39;global&#39;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="n">display_scope</span> <span class="o">==</span> <span class="s1">&#39;server_aware&#39;</span><span class="p">:</span>
+    <span class="c1"># Handle server-aware plugins generically</span>
+    <span class="k">pass</span>
+</code></pre>
+<h3 id="iterating-over-plugins">Iterating Over Plugins</h3>
+<pre><code class="language-python"><span class="c1"># CORRECT: Use plugin discovery</span>
+<span class="k">for</span> <span class="n">handler_name</span><span class="p">,</span> <span class="n">plugin_class</span> <span class="ow">in</span> <span class="n">discover_all_plugins</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+    <span class="n">display_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">plugin_class</span><span class="p">,</span> <span class="s1">&#39;DISPLAY_NAME&#39;</span><span class="p">,</span> <span class="n">handler_name</span><span class="p">)</span>
+    <span class="c1"># Process plugin...</span>
+</code></pre>
+<h3 id="validation">Validation</h3>
+<pre><code class="language-python"><span class="c1"># CORRECT: Same validation for all plugins</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_plugin_config</span><span class="p">(</span><span class="n">handler</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">plugin_class</span> <span class="o">=</span> <span class="n">discover_plugin_class</span><span class="p">(</span><span class="n">handler</span><span class="p">)</span>  <span class="c1"># Works for any plugin</span>
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">plugin_class</span><span class="o">.</span><span class="n">get_json_schema</span><span class="p">()</span>
+    <span class="n">validate</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
+</code></pre>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>User plugins are truly first-class</strong> - Can implement any capability built-in plugins have</li>
+<li><strong>No hidden behaviors</strong> - All plugin capabilities are documented and discoverable</li>
+<li><strong>Clean interfaces</strong> - Forces good API design</li>
+<li><strong>Easier onboarding</strong> - Third-party developers see their plugins treated equally</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Cannot take shortcuts</strong> - Must always use discovery even for common plugins</li>
+<li><strong>More verbose code</strong> - <code>getattr(plugin_class, 'DISPLAY_SCOPE', 'global')</code> instead of checking a list</li>
+<li><strong>Slight performance overhead</strong> - Discovery instead of direct lookup (negligible in practice)</li>
+</ul>
+<h2 id="related-decisions">Related Decisions</h2>
+<ul>
+<li><strong>ADR-007</strong>: Plugin Configuration Structure (defines per-server plugin configuration)</li>
+<li><strong>ADR-018</strong>: Plugin UI Widget Architecture (defines metadata plugins expose for TUI)</li>
+<li><strong>ADR-024</strong>: Security Plugin Detection Defaults (uses metadata for default detection options)</li>
+</ul>
+<h2 id="decision-makers">Decision Makers</h2>
+<p>Core architecture principle established to ensure extensibility and trust in security-critical software.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-024: Security Plugin Detection Option Defaults - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit security plugins (PII filter, secrets filter, prompt injection filter) have configurable detection options that control which types of content they d...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-024-security-plugin-detection-option-defaults">ADR-024: Security Plugin Detection Option Defaults</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit security plugins (PII filter, secrets filter, prompt injection filter) have configurable detection options that control which types of content they detect. For example:</p>
+<ul>
+<li><strong>PII filter</strong>: <code>pii_types</code> (email, phone, credit_card, ip_address, national_id)</li>
+<li><strong>Secrets filter</strong>: <code>secret_types</code> (api_keys, aws_credentials, jwt_tokens, private_keys, etc.)</li>
+<li><strong>Prompt injection filter</strong>: <code>detection_methods</code> (known_patterns, instruction_override, etc.)</li>
+</ul>
+<p>The question is: when a user enables a security plugin but doesn't explicitly configure these detection options, what should the default behavior be?</p>
+<h3 id="the-tension">The Tension</h3>
+<p>Two principles appear to be in conflict:</p>
+<p><strong>Security-first principle</strong>: Gatekit should be &quot;secure by default,&quot; suggesting all detection types should be enabled and set to the strictest settings.</p>
+<p><strong>Good first-run experience</strong>: When users first try Gatekit, they shouldn't encounter false positives that make it appear the gateway is mangling data or causing errors. This suggests conservative defaults.</p>
+<h3 id="current-state-inconsistent">Current State (Inconsistent)</h3>
+<p>The existing implementation is inconsistent across plugins:</p>
+<table>
+<thead>
+<tr>
+  <th>Plugin</th>
+  <th>Unspecified detection options</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Secrets filter</td>
+  <td>Enabled by default (except <code>private_keys</code>)</td>
+</tr>
+<tr>
+  <td>PII filter</td>
+  <td>Disabled by default</td>
+</tr>
+<tr>
+  <td>Prompt injection</td>
+  <td>Enabled by default</td>
+</tr>
+</tbody>
+</table>
+<p>This inconsistency creates confusion and unpredictable behavior.</p>
+<h2 id="decision">Decision</h2>
+<p>We resolve this tension by recognizing that <strong>two distinct defaults</strong> are at play:</p>
+<ol>
+<li><strong>Plugin existence default</strong>: Whether the plugin appears in a new configuration</li>
+<li><strong>Detection options default</strong>: When a plugin IS enabled, what are its settings?</li>
+</ol>
+<h3 id="policy">Policy</h3>
+<p><strong>&quot;Secure by default&quot; applies to the enabled state, not the existence state.</strong></p>
+<table>
+<thead>
+<tr>
+  <th>State</th>
+  <th>Behavior</th>
+  <th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Plugin not in config</td>
+  <td>No effect</td>
+  <td>Good first-run UX, no surprises</td>
+</tr>
+<tr>
+  <td>Plugin enabled, detection options not specified</td>
+  <td>All options enabled (with exceptions)</td>
+  <td>Secure by default when user opts in</td>
+</tr>
+<tr>
+  <td>Plugin enabled, options explicitly configured</td>
+  <td>Honor user configuration</td>
+  <td>User knows what they want</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Analogy</strong>: Think of it like a firewall. Installing a firewall doesn't automatically enable it (would break things). But when you DO enable the firewall, it defaults to blocking rather than allowing.</p>
+<h3 id="high-false-positive-exceptions">High-False-Positive Exceptions</h3>
+<p>Some detection options have known high false-positive rates and remain <strong>disabled by default</strong> even when the plugin is enabled:</p>
+<table>
+<thead>
+<tr>
+  <th>Plugin</th>
+  <th>Option</th>
+  <th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Secrets filter</td>
+  <td><code>private_keys</code></td>
+  <td>Matches many non-secret multi-line patterns</td>
+</tr>
+<tr>
+  <td>Secrets filter</td>
+  <td><code>entropy_detection</code></td>
+  <td>Flags random-looking but legitimate data</td>
+</tr>
+<tr>
+  <td>PII filter</td>
+  <td><code>scan_base64</code></td>
+  <td>Triggers on legitimate encoded content</td>
+</tr>
+<tr>
+  <td>Secrets filter</td>
+  <td><code>scan_base64</code></td>
+  <td>Triggers on legitimate encoded content</td>
+</tr>
+</tbody>
+</table>
+<p>These options require explicit opt-in because their false-positive rate makes them unsuitable for default-enabled behavior.</p>
+<h3 id="action-defaults">Action Defaults</h3>
+<p>The <code>action</code> field defaults to <code>redact</code> for both PII and secrets filters. This provides protection (content is modified) without breaking the user's workflow (requests still succeed). The options are:</p>
+<ul>
+<li><code>block</code>: Strictest, but may break legitimate workflows</li>
+<li><code>redact</code>: Protective but non-breaking (default)</li>
+<li><code>audit_only</code>: Logging only, no interference</li>
+</ul>
+<h2 id="implementation">Implementation</h2>
+<h3 id="plugin-implementation-pattern">Plugin Implementation Pattern</h3>
+<p>Security plugins should merge user configuration with defaults:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+    <span class="c1"># Define defaults - all detection types enabled except high-false-positive ones</span>
+    <span class="n">default_detection_types</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">detection_type</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enabled&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">}</span>
+        <span class="k">for</span> <span class="n">detection_type</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">DETECTION_TYPES</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span>
+    <span class="p">}</span>
+    <span class="c1"># Override specific high-false-positive options</span>
+    <span class="n">default_detection_types</span><span class="p">[</span><span class="s2">&quot;high_fp_option&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;enabled&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">}</span>
+
+    <span class="c1"># Merge with user config - user settings override defaults</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">detection_types</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;detection_types&quot;</span><span class="p">,</span> <span class="p">{})</span>
+    <span class="k">for</span> <span class="n">detection_type</span><span class="p">,</span> <span class="n">default_config</span> <span class="ow">in</span> <span class="n">default_detection_types</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">detection_type</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">detection_types</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">detection_types</span><span class="p">[</span><span class="n">detection_type</span><span class="p">]</span> <span class="o">=</span> <span class="n">default_config</span>
+</code></pre>
+<h3 id="tui-form-rendering">TUI Form Rendering</h3>
+<p>When displaying configuration forms for security plugins:</p>
+<ol>
+<li><strong>New plugin configuration</strong>: Detection option checkboxes should appear checked by default (reflecting the runtime defaults)</li>
+<li><strong>Existing configuration</strong>: Show actual configured state</li>
+<li><strong>Visual consistency</strong>: The form should reflect what will actually happen at runtime</li>
+</ol>
+<p>This ensures users see accurate representations of the effective configuration.</p>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Predictable behavior</strong>: Users know what to expect when enabling security plugins</li>
+<li><strong>Secure when enabled</strong>: Opting into security means getting real security</li>
+<li><strong>Easy customization</strong>: Users can disable specific types that cause false positives</li>
+<li><strong>Consistent UX</strong>: All security plugins follow the same pattern</li>
+<li><strong>No forced interference</strong>: New users aren't surprised by unexpected blocking/redaction</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Implementation work</strong>: Existing plugins need updates for consistency</li>
+<li><strong>Documentation updates</strong>: Need to clearly document the default-enabled behavior</li>
+<li><strong>Potential surprise for existing users</strong>: Users who relied on disabled-by-default behavior may see new detections after updates</li>
+</ul>
+<h3 id="migration-consideration">Migration Consideration</h3>
+<p>For users with existing configurations that rely on the old disabled-by-default behavior, they may need to explicitly disable detection types they don't want. This is acceptable because:</p>
+<ol>
+<li>It's a pre-1.0 release with no backward compatibility guarantees</li>
+<li>The new behavior is more intuitive and secure</li>
+<li>Explicit configuration is clearer than implicit defaults</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-all-detection-types-disabled-by-default">Alternative 1: All Detection Types Disabled by Default</h3>
+<pre><code class="language-yaml"><span class="c1"># User must explicitly enable each type</span>
+<span class="nt">basic_pii_filter</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">pii_types</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="nt">phone</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="c1"># Must list every type wanted</span>
+</code></pre>
+<p><strong>Rejected</strong>: Creates &quot;security theater&quot; - plugin appears enabled but catches nothing by default. Users may not realize they need to configure each type.</p>
+<h3 id="alternative-2-strictest-settings-by-default-including-block-action">Alternative 2: Strictest Settings by Default (Including Block Action)</h3>
+<pre><code class="language-yaml"><span class="c1"># Everything enabled, action: block</span>
+<span class="nt">basic_pii_filter</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">block</span><span class="w">  </span><span class="c1"># Default to blocking</span>
+</code></pre>
+<p><strong>Rejected</strong>: Too aggressive for a default. Blocking can break legitimate workflows and frustrate users during initial setup.</p>
+<h3 id="alternative-3-different-defaults-for-development-vs-production">Alternative 3: Different Defaults for Development vs Production</h3>
+<pre><code class="language-yaml"><span class="c1"># environment-aware defaults</span>
+<span class="nt">basic_pii_filter</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="c1"># defaults vary based on detected environment</span>
+</code></pre>
+<p><strong>Rejected</strong>: Adds complexity, hard to predict behavior, environment detection is unreliable.</p>
+<h2 id="related-adrs">Related ADRs</h2>
+<ul>
+<li><strong>ADR-006</strong>: Critical Plugin Failure Modes - Establishes &quot;secure by default&quot; for plugin failure behavior</li>
+<li><strong>ADR-005</strong>: Configuration Management - Defines configuration loading and validation patterns</li>
+<li><strong>ADR-018</strong>: Plugin UI Widget Architecture - Covers TUI rendering for plugin configuration</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

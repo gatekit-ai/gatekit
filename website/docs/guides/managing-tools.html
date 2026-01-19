@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tutorial: Managing Tools with Gatekit - Gatekit Documentation</title>
+  <meta name="description" content="This tutorial shows how to filter, rename, and customize tool descriptions using the Tool Manager plugin.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../docs/getting-started.html">Get started</a>
+        <a href="../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html" class="active">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="tutorial-managing-tools-with-gatekit">Tutorial: Managing Tools with Gatekit</h1>
+<p>This tutorial shows how to filter, rename, and customize tool descriptions using the Tool Manager plugin.</p>
+<h2 id="why-manage-tools">Why Manage Tools?</h2>
+<p>MCP servers often expose more tools than you need. Extra tools:</p>
+<ul>
+<li>Clutter the agent's context window</li>
+<li>Increase the chance of the agent picking the wrong tool</li>
+<li>May expose capabilities you'd rather hide</li>
+</ul>
+<p>Tool Manager lets you curate exactly which tools are visible to your MCP client.</p>
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+<li>Gatekit installed and configured (run <code>gatekit</code> to complete guided setup)</li>
+<li>At least one MCP server configured</li>
+</ul>
+<h2 id="step-1-open-the-server-panel">Step 1: Open the Server Panel</h2>
+<ol>
+<li>Run <code>gatekit</code></li>
+<li>Select your config file (or use the default)</li>
+<li>In the main view, select the server you want to configure</li>
+<li>Press <code>Enter</code> to open the server panel</li>
+</ol>
+<p>Tool Manager is configured <strong>per-server</strong> because each server has different tools.</p>
+<h2 id="step-2-enable-tool-manager">Step 2: Enable Tool Manager</h2>
+<ol>
+<li>In the server panel, find <strong>Tool Manager</strong> under the Middleware section</li>
+<li>Select it and press <code>Enter</code> to open the configuration modal</li>
+<li>Toggle <strong>Enabled</strong> to on</li>
+</ol>
+<h2 id="step-3-select-which-tools-to-allow">Step 3: Select Which Tools to Allow</h2>
+<p>The Tool Manager uses an <strong>allowlist</strong> - only checked tools are visible to your MCP client.</p>
+<ol>
+<li>In the configuration modal, you'll see a list of all tools from this server</li>
+<li><strong>Check</strong> the tools you want to keep visible</li>
+<li><strong>Uncheck</strong> tools you want to hide</li>
+</ol>
+<blockquote>
+<p><strong>Tip</strong>: Start by unchecking tools you never use. You can always re-enable them later.</p>
+</blockquote>
+<h2 id="step-4-rename-a-tool-optional">Step 4: Rename a Tool (Optional)</h2>
+<p>Tool names from MCP servers aren't always clear. You can rename them:</p>
+<ol>
+<li>Select a tool in the list</li>
+<li>Edit the <strong>Display Name</strong> field</li>
+<li>The original tool still works - Gatekit translates the name automatically</li>
+</ol>
+<p><strong>Example</strong>: Rename <code>fs_read</code> to <code>read_file</code> for clarity.</p>
+<h2 id="step-5-customize-a-description-optional">Step 5: Customize a Description (Optional)</h2>
+<p>Tool descriptions help the agent understand when to use each tool. Override unclear descriptions:</p>
+<ol>
+<li>Select a tool in the list</li>
+<li>Edit the <strong>Display Description</strong> field</li>
+<li>Write a clear, specific description</li>
+</ol>
+<p><strong>Example</strong>: Change <code>puppeteer_screenshot</code>'s description from &quot;Take a screenshot&quot; to &quot;Capture the current page for visual debugging. Use after navigation or interactions to verify the expected state rendered correctly.&quot;</p>
+<h2 id="step-6-save-and-restart">Step 6: Save and Restart</h2>
+<ol>
+<li>Press <code>Ctrl+S</code> or click <strong>Save</strong> to save your configuration</li>
+<li>Restart your MCP client (Claude Desktop, Cursor, etc.)</li>
+</ol>
+<p>Your client will now only see the tools you allowed, with your custom names and descriptions.</p>
+<h2 id="verifying-it-works">Verifying It Works</h2>
+<p>Ask your MCP client to list available tools. You should see:</p>
+<ul>
+<li>Only the tools you enabled</li>
+<li>Your custom names (if you renamed any)</li>
+<li>Your custom descriptions (if you changed any)</li>
+</ul>
+<h2 id="next-steps">Next Steps</h2>
+<ul>
+<li>Configure Tool Manager for your other servers</li>
+<li>Explore <a href="configuration-specification.md#plugin-configuration">audit logging</a> to see what tools are being called</li>
+<li>Read the <a href="plugin-development-guide.html">plugin development guide</a> to build custom filtering logic</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

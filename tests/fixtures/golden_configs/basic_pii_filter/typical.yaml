@@ -1,0 +1,22 @@
+handler: basic_pii_filter
+category: security
+description: >-
+  Typical deployment enabling email and phone scanning with a medium priority so
+  the filter runs before other security plugins.
+config:
+  enabled: true
+  critical: true
+  priority: 20
+  action: redact
+  pii_types:
+    email:
+      enabled: true
+    phone:
+      enabled: true
+    credit_card:
+      enabled: true
+    national_id:
+      enabled: false
+    ip_address:
+      enabled: false
+  scan_base64: true

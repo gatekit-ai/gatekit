@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-021: Handler Nomenclature for Plugin Manifest Declarations - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit's plugin system originally used the term "POLICIES" for manifest declarations that map plugin names to their implementation classes. This terminology...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-021-handler-nomenclature-for-plugin-manifest-declarations">ADR-021: Handler Nomenclature for Plugin Manifest Declarations</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit's plugin system originally used the term &quot;POLICIES&quot; for manifest declarations that map plugin names to their implementation classes. This terminology was inherited from the initial security-focused design where plugins were conceptualized as &quot;security policies.&quot;</p>
+<p>With the introduction of middleware plugins, this terminology became problematic:</p>
+<ol>
+<li><p><strong>Semantic Inaccuracy</strong>: The term &quot;policy&quot; implies rules or governance, which makes sense for security plugins but not for middleware that performs transformations, routing, or other non-policy operations.</p>
+</li>
+<li><p><strong>Conceptual Confusion</strong>: Auditing plugins that simply observe and log are not &quot;policies&quot; in any meaningful sense. They don't enforce anything or make decisions.</p>
+</li>
+<li><p><strong>Limited Scope</strong>: As the plugin architecture expanded to support different plugin types (security, auditing, middleware), the term &quot;policy&quot; became increasingly inappropriate for non-security contexts.</p>
+</li>
+<li><p><strong>Developer Experience</strong>: New plugin developers were confused about why they needed to declare &quot;POLICIES&quot; for plugins that weren't implementing any policies.</p>
+</li>
+</ol>
+<h2 id="decision">Decision</h2>
+<p>We will rename all references from &quot;POLICIES&quot; to &quot;HANDLERS&quot; throughout the codebase:</p>
+<ol>
+<li><strong>Manifest Declarations</strong>: Change <code>POLICIES = {...}</code> to <code>HANDLERS = {...}</code> in all plugin files</li>
+<li><strong>Configuration Fields</strong>: Change <code>policy: &quot;plugin_name&quot;</code> to <code>handler: &quot;plugin_name&quot;</code> in YAML configurations</li>
+<li><strong>Plugin Attributes</strong>: Change <code>plugin.policy</code> to <code>plugin.handler</code> for runtime plugin identification</li>
+<li><strong>Method Names</strong>: Change <code>_discover_policies()</code> to <code>_discover_handlers()</code> in the plugin manager</li>
+<li><strong>Variable Names</strong>: Change all <code>policy_name</code>, <code>available_policies</code> to <code>handler_name</code>, <code>available_handlers</code></li>
+</ol>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ol>
+<li><p><strong>Semantic Clarity</strong>: &quot;Handler&quot; accurately describes what these are - code that handles messages, regardless of plugin type.</p>
+</li>
+<li><p><strong>Universal Applicability</strong>: The term &quot;handler&quot; works equally well for all plugin types:</p>
+<ul>
+<li>Security handlers make security decisions</li>
+<li>Middleware handlers transform or route messages</li>
+<li>Auditing handlers observe and log activity</li>
+</ul>
+</li>
+<li><p><strong>Improved Developer Experience</strong>: Plugin developers immediately understand that they're declaring message handlers, not policies.</p>
+</li>
+<li><p><strong>Future-Proof</strong>: As new plugin types are added, &quot;handler&quot; remains appropriate terminology.</p>
+</li>
+<li><p><strong>Industry Alignment</strong>: &quot;Handler&quot; is widely used in similar contexts (event handlers, request handlers, message handlers).</p>
+</li>
+</ol>
+<h3 id="negative">Negative</h3>
+<ol>
+<li><p><strong>Migration Effort</strong>: All existing plugins and configurations need to be updated.</p>
+</li>
+<li><p><strong>Documentation Updates</strong>: All documentation references must be changed.</p>
+</li>
+<li><p><strong>Potential User Confusion</strong>: Users with existing configurations will need to update them (mitigated by helpful error messages).</p>
+</li>
+</ol>
+<h3 id="migration-strategy">Migration Strategy</h3>
+<p>Since Gatekit is at v0.1.0 with no backward compatibility requirements, we can make this a clean break. However, we will:</p>
+<ol>
+<li>Provide clear error messages when old &quot;policy&quot; configuration is detected</li>
+<li>Include a migration script for users to update their configurations</li>
+<li>Update all documentation and examples</li>
+<li>Ensure comprehensive testing of the new terminology</li>
+</ol>
+<h2 id="implementation">Implementation</h2>
+<p>The implementation includes:</p>
+<ol>
+<li>Comprehensive grep audit to find all uses of &quot;policy&quot; terminology</li>
+<li>Systematic updates to all plugin files, tests, and documentation</li>
+<li>Addition of helpful error messages for old configuration format</li>
+<li>Creation of migration tooling for user configurations</li>
+</ol>
+<h2 id="notes">Notes</h2>
+<p>This change exemplifies Gatekit's commitment to semantic accuracy and developer experience. While &quot;policy&quot; made sense in the initial security-focused context, the evolution to a general-purpose plugin architecture requires terminology that accurately reflects the broader scope of functionality.</p>
+<p>The term &quot;handler&quot; was chosen over alternatives like &quot;processor&quot;, &quot;plugin&quot;, or &quot;implementation&quot; because:</p>
+<ul>
+<li>It's concise and clear</li>
+<li>It accurately describes the function (handling messages)</li>
+<li>It's familiar to developers from other contexts</li>
+<li>It doesn't imply any specific type of processing or decision-making</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

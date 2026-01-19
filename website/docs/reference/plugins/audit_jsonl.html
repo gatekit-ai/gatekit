@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSON Lines Auditing - Gatekit Documentation</title>
+  <meta name="description" content="Log MCP requests, responses, and notifications in JSON Lines format for structured logging and integration with log aggregation systems (ELK, Splunk, etc.).">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="json-lines-auditing">JSON Lines Auditing</h1>
+<p>Log MCP requests, responses, and notifications in JSON Lines format for structured logging and integration with log aggregation systems (ELK, Splunk, etc.).</p>
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Handler</td>
+  <td><code>audit_jsonl</code></td>
+</tr>
+<tr>
+  <td>Type</td>
+  <td>Auditing</td>
+</tr>
+<tr>
+  <td>Scope</td>
+  <td>Global (can be configured globally or per-server)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-it-works">How It Works</h2>
+<p>The JSON Lines auditing plugin:</p>
+<ol>
+<li>Logs each MCP request, response, and notification as a single JSON object per line</li>
+<li>Includes full pipeline processing metadata (which plugins ran, decisions made)</li>
+<li>Optionally includes message bodies (request params, response results)</li>
+<li>Supports body size limits to control log volume</li>
+</ol>
+<h2 id="log-entry-fields">Log Entry Fields</h2>
+<p>Each log entry includes:</p>
+<table>
+<thead>
+<tr>
+  <th>Field</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>timestamp</code></td>
+  <td>ISO 8601 timestamp</td>
+</tr>
+<tr>
+  <td><code>event_type</code></td>
+  <td>REQUEST, RESPONSE, NOTIFICATION, or error types</td>
+</tr>
+<tr>
+  <td><code>request_id</code></td>
+  <td>MCP request ID for correlation</td>
+</tr>
+<tr>
+  <td><code>server_name</code></td>
+  <td>Which upstream server handled the request</td>
+</tr>
+<tr>
+  <td><code>method</code></td>
+  <td>MCP method (e.g., <code>tools/call</code>, <code>resources/read</code>)</td>
+</tr>
+<tr>
+  <td><code>pipeline_outcome</code></td>
+  <td>Final pipeline result (allowed, blocked, modified, etc.)</td>
+</tr>
+<tr>
+  <td><code>security_evaluated</code></td>
+  <td>Whether security plugins made a decision</td>
+</tr>
+<tr>
+  <td><code>modified</code></td>
+  <td>Whether any plugin modified the content</td>
+</tr>
+<tr>
+  <td><code>pipeline</code></td>
+  <td>Detailed plugin processing information</td>
+</tr>
+<tr>
+  <td><code>reason</code></td>
+  <td>Combined reasons from all plugins</td>
+</tr>
+</tbody>
+</table>
+<p>Additional fields for responses:</p>
+<ul>
+<li><code>duration_ms</code> - Request processing time</li>
+<li><code>response_status</code> - success or error</li>
+<li><code>error_code</code> / <code>error_message</code> - For error responses</li>
+</ul>
+<h2 id="configuration-reference">Configuration Reference</h2>
+<h3 id="output_file">output_file</h3>
+<p>Path to the JSON Lines log file. Supports <code>~</code> for home directory.</p>
+<p><strong>Type:</strong> string
+<strong>Default:</strong> <code>logs/gatekit_audit.jsonl</code>
+<strong>Required:</strong> Yes</p>
+<blockquote>
+<p><strong>Note:</strong> Relative paths are resolved relative to the config file's directory.</p>
+</blockquote>
+<h3 id="include_request_body">include_request_body</h3>
+<p>Include full request parameters in logs.</p>
+<p><strong>Type:</strong> boolean
+<strong>Default:</strong> <code>false</code></p>
+<h3 id="include_response_body">include_response_body</h3>
+<p>Include full response result/error in logs.</p>
+<p><strong>Type:</strong> boolean
+<strong>Default:</strong> <code>false</code></p>
+<h3 id="include_notification_body">include_notification_body</h3>
+<p>Include full notification parameters in logs.</p>
+<p><strong>Type:</strong> boolean
+<strong>Default:</strong> <code>false</code></p>
+<h3 id="max_body_size">max_body_size</h3>
+<p>Maximum size in bytes for logged message bodies. Bodies larger than this are truncated.</p>
+<p><strong>Type:</strong> integer
+<strong>Default:</strong> <code>10240</code> (10 KB)
+<strong>Range:</strong> 0 (unlimited) or 50-1048576 (50 bytes to 1 MB)</p>
+<h2 id="yaml-configuration">YAML Configuration</h2>
+<h3 id="minimal-configuration">Minimal Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_jsonl</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.jsonl</span>
+</code></pre>
+<h3 id="full-configuration">Full Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_jsonl</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">           </span><span class="c1"># Don&#39;t block requests if logging fails</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.jsonl</span>
+
+<span class="w">    </span><span class="nt">include_request_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">include_response_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">include_notification_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">max_body_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10240</span><span class="w">      </span><span class="c1"># 10 KB limit</span>
+</code></pre>
+<h3 id="debug-configuration-full-bodies">Debug Configuration (Full Bodies)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_jsonl</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/debug_audit.jsonl</span>
+
+<span class="w">    </span><span class="nt">include_request_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">include_response_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">include_notification_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_body_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">102400</span><span class="w">     </span><span class="c1"># 100 KB limit for debugging</span>
+</code></pre>
+<h3 id="production-configuration-minimal-logging">Production Configuration (Minimal Logging)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_jsonl</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/var/log/gatekit/audit.jsonl</span>
+
+<span class="w">    </span><span class="nt">include_request_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">include_response_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">include_notification_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">max_body_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span><span class="w">       </span><span class="c1"># 1 KB limit</span>
+</code></pre>
+<h2 id="example-log-entry">Example Log Entry</h2>
+<pre><code class="language-json"><span class="p">{</span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="s2">&quot;2025-01-12T15:30:45.123Z&quot;</span><span class="p">,</span><span class="nt">&quot;event_type&quot;</span><span class="p">:</span><span class="s2">&quot;RESPONSE&quot;</span><span class="p">,</span><span class="nt">&quot;request_id&quot;</span><span class="p">:</span><span class="mi">42</span><span class="p">,</span><span class="nt">&quot;server_name&quot;</span><span class="p">:</span><span class="s2">&quot;filesystem&quot;</span><span class="p">,</span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span><span class="nt">&quot;tool&quot;</span><span class="p">:</span><span class="s2">&quot;read_file&quot;</span><span class="p">,</span><span class="nt">&quot;pipeline_outcome&quot;</span><span class="p">:</span><span class="s2">&quot;allowed&quot;</span><span class="p">,</span><span class="nt">&quot;security_evaluated&quot;</span><span class="p">:</span><span class="kc">true</span><span class="p">,</span><span class="nt">&quot;modified&quot;</span><span class="p">:</span><span class="kc">false</span><span class="p">,</span><span class="nt">&quot;response_status&quot;</span><span class="p">:</span><span class="s2">&quot;success&quot;</span><span class="p">,</span><span class="nt">&quot;duration_ms&quot;</span><span class="p">:</span><span class="mi">45</span><span class="p">,</span><span class="nt">&quot;pipeline&quot;</span><span class="p">:{</span><span class="nt">&quot;stages&quot;</span><span class="p">:[{</span><span class="nt">&quot;plugin&quot;</span><span class="p">:</span><span class="s2">&quot;basic_pii_filter&quot;</span><span class="p">,</span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="s2">&quot;ALLOWED&quot;</span><span class="p">,</span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="s2">&quot;No PII detected&quot;</span><span class="p">}]},</span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="s2">&quot;No PII detected&quot;</span><span class="p">}</span>
+</code></pre>
+<h2 id="event-types">Event Types</h2>
+<table>
+<thead>
+<tr>
+  <th>Type</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>REQUEST</code></td>
+  <td>Incoming MCP request</td>
+</tr>
+<tr>
+  <td><code>RESPONSE</code></td>
+  <td>Successful response</td>
+</tr>
+<tr>
+  <td><code>NOTIFICATION</code></td>
+  <td>MCP notification</td>
+</tr>
+<tr>
+  <td><code>SECURITY_BLOCK</code></td>
+  <td>Request blocked by security plugin</td>
+</tr>
+<tr>
+  <td><code>UPSTREAM_ERROR</code></td>
+  <td>Error from upstream server (-32000 to -32099)</td>
+</tr>
+<tr>
+  <td><code>PARSE_ERROR</code></td>
+  <td>JSON-RPC parse error (-32700)</td>
+</tr>
+<tr>
+  <td><code>INVALID_REQUEST_ERROR</code></td>
+  <td>Invalid request structure (-32600)</td>
+</tr>
+<tr>
+  <td><code>METHOD_NOT_FOUND_ERROR</code></td>
+  <td>Method not found (-32601)</td>
+</tr>
+<tr>
+  <td><code>INVALID_PARAMS_ERROR</code></td>
+  <td>Invalid parameters (-32602)</td>
+</tr>
+<tr>
+  <td><code>INTERNAL_ERROR</code></td>
+  <td>Internal JSON-RPC error (-32603)</td>
+</tr>
+<tr>
+  <td><code>APPLICATION_ERROR</code></td>
+  <td>Other application errors</td>
+</tr>
+</tbody>
+</table>
+<h2 id="security-note">Security Note</h2>
+<p>When security plugins redact content (PII, secrets, etc.), the audit log receives the <strong>redacted</strong> version, not the original. This ensures sensitive data is not written to log files.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

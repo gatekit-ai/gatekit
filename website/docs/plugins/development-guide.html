@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plugin Development Guide - Gatekit Documentation</title>
+  <meta name="description" content="This guide covers writing custom plugins for Gatekit. Plugins let you intercept MCP traffic to transform messages, enforce security policies, or log activity.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../docs/getting-started.html">Get started</a>
+        <a href="../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html" class="active">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="plugin-development-guide">Plugin Development Guide</h1>
+<p>This guide covers writing custom plugins for Gatekit. Plugins let you intercept MCP traffic to transform messages, enforce security policies, or log activity.</p>
+<h2 id="plugin-types">Plugin Types</h2>
+<p>Gatekit has three plugin types:</p>
+<table>
+<thead>
+<tr>
+  <th>Type</th>
+  <th>Purpose</th>
+  <th>Can Block?</th>
+  <th>Can Modify?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Middleware</strong></td>
+  <td>Transform requests/responses, complete requests early</td>
+  <td>No</td>
+  <td>Yes</td>
+</tr>
+<tr>
+  <td><strong>Security</strong></td>
+  <td>Allow/block decisions based on content</td>
+  <td>Yes</td>
+  <td>Yes</td>
+</tr>
+<tr>
+  <td><strong>Auditing</strong></td>
+  <td>Log and observe message flow</td>
+  <td>No</td>
+  <td>No</td>
+</tr>
+</tbody>
+</table>
+<p>Choose based on what you need:</p>
+<ul>
+<li><strong>Transform content</strong> (rename tools, modify responses) → Middleware</li>
+<li><strong>Block dangerous content</strong> (PII, secrets, injections) → Security</li>
+<li><strong>Log activity</strong> (audit trail, debugging) → Auditing</li>
+</ul>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="minimal-middleware-plugin">Minimal Middleware Plugin</h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.plugins.interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">MiddlewarePlugin</span><span class="p">,</span> <span class="n">PluginResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.protocol.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">MCPRequest</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyMiddlewarePlugin</span><span class="p">(</span><span class="n">MiddlewarePlugin</span><span class="p">):</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;My Middleware&quot;</span>
+    <span class="n">DESCRIPTION</span> <span class="o">=</span> <span class="s2">&quot;Does something useful with requests.&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">my_setting</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;my_setting&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+        <span class="c1"># Your logic here</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Processed successfully&quot;</span><span class="p">)</span>
+
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;my_middleware&quot;</span><span class="p">:</span> <span class="n">MyMiddlewarePlugin</span><span class="p">}</span>
+</code></pre>
+<h3 id="minimal-security-plugin">Minimal Security Plugin</h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.plugins.interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">SecurityPlugin</span><span class="p">,</span> <span class="n">PluginResult</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.protocol.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">MCPRequest</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MySecurityPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;My Security Plugin&quot;</span>
+    <span class="n">DESCRIPTION</span> <span class="o">=</span> <span class="s2">&quot;Checks requests for policy violations.&quot;</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+        <span class="c1"># Security plugins MUST set allowed=True or allowed=False</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_dangerous</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Policy violation detected&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Request approved&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_is_dangerous</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="c1"># Your detection logic</span>
+        <span class="k">return</span> <span class="kc">False</span>
+
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;my_security&quot;</span><span class="p">:</span> <span class="n">MySecurityPlugin</span><span class="p">}</span>
+</code></pre>
+<h3 id="minimal-auditing-plugin">Minimal Auditing Plugin</h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Any</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.plugins.interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">AuditingPlugin</span><span class="p">,</span> <span class="n">ProcessingPipeline</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.protocol.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">MCPResponse</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyAuditingPlugin</span><span class="p">(</span><span class="n">AuditingPlugin</span><span class="p">):</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;My Auditing Plugin&quot;</span>
+    <span class="n">DESCRIPTION</span> <span class="o">=</span> <span class="s2">&quot;Logs MCP activity.&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">log_file</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;log_file&quot;</span><span class="p">,</span> <span class="s2">&quot;my_audit.log&quot;</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">log_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># Log the request - full pipeline visibility available</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Request: </span><span class="si">{</span><span class="n">request</span><span class="o">.</span><span class="n">method</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">server_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">log_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Response: </span><span class="si">{</span><span class="n">request</span><span class="o">.</span><span class="n">method</span><span class="si">}</span><span class="s2"> from </span><span class="si">{</span><span class="n">server_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;my_auditing&quot;</span><span class="p">:</span> <span class="n">MyAuditingPlugin</span><span class="p">}</span>
+</code></pre>
+<h3 id="installing-your-plugin">Installing Your Plugin</h3>
+<p>Place your plugin file in the appropriate directory inside your Gatekit installation:</p>
+<pre><code class="language-text">gatekit/plugins/
+├── middleware/
+│   └── my_middleware.py      # Your middleware plugin
+├── security/
+│   └── my_security.py        # Your security plugin
+└── auditing/
+    └── my_auditing.py        # Your auditing plugin
+</code></pre>
+<p>For multi-file plugins, use a subdirectory:</p>
+<pre><code class="language-text">gatekit/plugins/security/
+└── my_complex_plugin/
+    ├── __init__.py           # Can be empty
+    ├── main.py               # Contains HANDLERS dict
+    └── patterns.py           # Helper module
+</code></pre>
+<p>Once installed, your plugin appears in the terminal UI (TUI) and can be enabled on any server.</p>
+<h3 id="enabling-via-tui">Enabling via TUI</h3>
+<p>After installing your plugin:</p>
+<ol>
+<li>Run <code>gatekit</code></li>
+<li>Select a server to configure, or choose global settings to apply the plugin to all servers</li>
+<li>Find your plugin in the appropriate section (Middleware, Security, or Auditing)</li>
+<li>Enable and configure it</li>
+</ol>
+<p>The TUI handles all YAML configuration for you.</p>
+<h2 id="pluginresult">PluginResult</h2>
+<p>All plugins return <code>PluginResult</code>. The fields you use depend on what you're doing:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="n">allowed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>        <span class="c1"># Security decision (required for SecurityPlugin)</span>
+    <span class="n">modified_content</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="o">...</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span> <span class="c1"># Modified request/response/notification</span>
+    <span class="n">completed_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Return this directly to client, skip MCP server</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>                       <span class="c1"># Human-readable explanation</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>  <span class="c1"># Extra info for auditing</span>
+</code></pre>
+<h3 id="common-patterns">Common Patterns</h3>
+<p><strong>Pass through unchanged:</strong></p>
+<pre><code class="language-python"><span class="k">return</span> <span class="n">PluginResult</span><span class="p">()</span>
+</code></pre>
+<p><strong>Block a request (Security only):</strong></p>
+<pre><code class="language-python"><span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Contains PII&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Allow a request (Security only):</strong></p>
+<pre><code class="language-python"><span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Clean&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Modify content:</strong></p>
+<pre><code class="language-python"><span class="c1"># Safely merge new values into params (params can be None or List)</span>
+<span class="n">new_params</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">)</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="k">else</span> <span class="p">{}</span>
+<span class="n">new_params</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;new_tool_name&quot;</span>
+
+<span class="n">modified_request</span> <span class="o">=</span> <span class="n">MCPRequest</span><span class="p">(</span>
+    <span class="n">jsonrpc</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">jsonrpc</span><span class="p">,</span>
+    <span class="nb">id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">method</span><span class="p">,</span>
+    <span class="n">params</span><span class="o">=</span><span class="n">new_params</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+    <span class="n">modified_content</span><span class="o">=</span><span class="n">modified_request</span><span class="p">,</span>
+    <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Renamed tool&quot;</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>Complete request early (Middleware only):</strong></p>
+<pre><code class="language-python"><span class="n">cached_result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">cache_key</span><span class="p">)</span>
+<span class="k">if</span> <span class="n">cached_result</span><span class="p">:</span>
+    <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+        <span class="n">completed_response</span><span class="o">=</span><span class="n">MCPResponse</span><span class="p">(</span>
+            <span class="n">jsonrpc</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">jsonrpc</span><span class="p">,</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+            <span class="n">result</span><span class="o">=</span><span class="n">cached_result</span><span class="p">,</span>
+        <span class="p">),</span>
+        <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Returned from cache&quot;</span>
+    <span class="p">)</span>
+</code></pre>
+<h2 id="middleware-plugins">Middleware Plugins</h2>
+<p>Middleware plugins transform messages or complete requests early. They cannot block messages (use SecurityPlugin for that).</p>
+<h3 id="key-methods">Key Methods</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">MiddlewarePlugin</span><span class="p">(</span><span class="n">PluginInterface</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Process incoming request before it reaches the server.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Process response from server before it reaches the client.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_notification</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">notification</span><span class="p">:</span> <span class="n">MCPNotification</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Process notification messages.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">()</span>
+</code></pre>
+<h3 id="example-tool-filtering">Example: Tool Filtering</h3>
+<p>The built-in <code>tool_manager</code> plugin shows how to filter tools (simplified):</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+    <span class="c1"># Only process tools/list responses</span>
+    <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">!=</span> <span class="s2">&quot;tools/list&quot;</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">()</span>
+
+    <span class="n">tools</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;tools&quot;</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="n">allowed_names</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="p">[</span><span class="s2">&quot;tool&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tools</span><span class="p">}</span>  <span class="c1"># self.tools from config</span>
+
+    <span class="c1"># Filter tools based on allowlist</span>
+    <span class="n">filtered_tools</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">tools</span> <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">)</span> <span class="ow">in</span> <span class="n">allowed_names</span><span class="p">]</span>
+
+    <span class="c1"># Create modified response</span>
+    <span class="n">modified_result</span> <span class="o">=</span> <span class="p">{</span><span class="o">**</span><span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;tools&quot;</span><span class="p">:</span> <span class="n">filtered_tools</span><span class="p">}</span>
+    <span class="n">modified_response</span> <span class="o">=</span> <span class="n">MCPResponse</span><span class="p">(</span>
+        <span class="n">jsonrpc</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">jsonrpc</span><span class="p">,</span>
+        <span class="nb">id</span><span class="o">=</span><span class="n">response</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+        <span class="n">result</span><span class="o">=</span><span class="n">modified_result</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+        <span class="n">modified_content</span><span class="o">=</span><span class="n">modified_response</span><span class="p">,</span>
+        <span class="n">reason</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Filtered to </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">filtered_tools</span><span class="p">)</span><span class="si">}</span><span class="s2"> tools&quot;</span>
+    <span class="p">)</span>
+</code></pre>
+<h3 id="priority">Priority</h3>
+<p>Middleware and security plugins share the same priority ordering (0-100, lower = higher priority). This determines the order plugins execute in the pipeline:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="c1"># Priority is set automatically from config, defaults to 50</span>
+    <span class="c1"># self.priority is available after super().__init__</span>
+</code></pre>
+<p>Configure priority in the TUI or YAML:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">server_name</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my_middleware</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">  </span><span class="c1"># Runs before plugins with priority &gt; 10</span>
+</code></pre>
+<h2 id="security-plugins">Security Plugins</h2>
+<p>Security plugins make allow/block decisions. They <strong>must</strong> set <code>allowed=True</code> or <code>allowed=False</code> in their return value.</p>
+<h3 id="key-requirement">Key Requirement</h3>
+<p>Every <code>process_*</code> method must return a PluginResult with <code>allowed</code> set:</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+    <span class="c1"># CORRECT - always set allowed</span>
+    <span class="k">if</span> <span class="n">dangerous</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Blocked&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Allowed&quot;</span><span class="p">)</span>
+
+    <span class="c1"># WRONG - missing allowed field will cause issues</span>
+    <span class="c1"># return PluginResult(reason=&quot;Something&quot;)</span>
+</code></pre>
+<h3 id="display-scopes">Display Scopes</h3>
+<p>Middleware and security plugins declare where they appear in the TUI:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">MySecurityPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span>  <span class="c1"># One of: &quot;global&quot;, &quot;server_aware&quot;, &quot;server_specific&quot;</span>
+</code></pre>
+<table>
+<thead>
+<tr>
+  <th>Scope</th>
+  <th>When to Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>global</code></td>
+  <td>Plugin works the same for all servers (PII filter, secrets filter)</td>
+</tr>
+<tr>
+  <td><code>server_aware</code></td>
+  <td>Plugin needs per-server configuration (tool allowlists)</td>
+</tr>
+<tr>
+  <td><code>server_specific</code></td>
+  <td>Plugin is designed for a specific server type</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-pattern-detection">Example: Pattern Detection</h3>
+<p>The built-in PII filter shows pattern-based security:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">BasicPIIFilterPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;Basic PII Filter&quot;</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="s2">&quot;redact&quot;</span><span class="p">)</span>  <span class="c1"># block, redact, or audit_only</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_compile_patterns</span><span class="p">()</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">:</span>
+            <span class="n">detections</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_detect_pii</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">detections</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;block&quot;</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+                    <span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                    <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;PII detected&quot;</span><span class="p">,</span>
+                    <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;detections&quot;</span><span class="p">:</span> <span class="n">detections</span><span class="p">}</span>
+                <span class="p">)</span>
+            <span class="k">elif</span> <span class="n">detections</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;redact&quot;</span><span class="p">:</span>
+                <span class="n">redacted_params</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_redact</span><span class="p">(</span><span class="n">request</span><span class="o">.</span><span class="n">params</span><span class="p">,</span> <span class="n">detections</span><span class="p">)</span>
+                <span class="n">modified</span> <span class="o">=</span> <span class="n">MCPRequest</span><span class="p">(</span>
+                    <span class="n">jsonrpc</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">jsonrpc</span><span class="p">,</span>
+                    <span class="nb">id</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+                    <span class="n">method</span><span class="o">=</span><span class="n">request</span><span class="o">.</span><span class="n">method</span><span class="p">,</span>
+                    <span class="n">params</span><span class="o">=</span><span class="n">redacted_params</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+                    <span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">modified_content</span><span class="o">=</span><span class="n">modified</span><span class="p">,</span>
+                    <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;PII redacted&quot;</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;No PII detected&quot;</span><span class="p">)</span>
+</code></pre>
+<h2 id="auditing-plugins">Auditing Plugins</h2>
+<p>Auditing plugins observe the processing pipeline without affecting message flow. They have full visibility into what happened during processing.</p>
+<h3 id="key-methods">Key Methods</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">AuditingPlugin</span><span class="p">(</span><span class="n">PluginInterface</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">log_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Log request with full pipeline visibility.&quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">log_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Log response with full pipeline visibility.&quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">log_notification</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">notification</span><span class="p">:</span> <span class="n">MCPNotification</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Log notification with full pipeline visibility.&quot;&quot;&quot;</span>
+        <span class="k">pass</span>
+</code></pre>
+<h3 id="processingpipeline">ProcessingPipeline</h3>
+<p>The pipeline gives you full observability into how a message was processed:</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">log_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="c1"># Overall outcome</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Outcome: </span><span class="si">{</span><span class="n">pipeline</span><span class="o">.</span><span class="n">pipeline_outcome</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>  <span class="c1"># allowed, blocked, modified, etc.</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Blocked by: </span><span class="si">{</span><span class="n">pipeline</span><span class="o">.</span><span class="n">blocked_at_stage</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>     <span class="c1"># Plugin name if blocked</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total time: </span><span class="si">{</span><span class="n">pipeline</span><span class="o">.</span><span class="n">total_time_ms</span><span class="si">}</span><span class="s2">ms&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Per-stage details</span>
+    <span class="k">for</span> <span class="n">stage</span> <span class="ow">in</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">stages</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">plugin_name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">outcome</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    Reason: </span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;    Time: </span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">processing_time_ms</span><span class="si">}</span><span class="s2">ms&quot;</span><span class="p">)</span>
+</code></pre>
+<h3 id="pathresolvableplugin-mixin">PathResolvablePlugin Mixin</h3>
+<p>For auditing plugins that write to files, use the <code>PathResolvablePlugin</code> mixin for proper path resolution:</p>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.plugins.interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">AuditingPlugin</span><span class="p">,</span> <span class="n">PathResolvablePlugin</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">List</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyFileAuditingPlugin</span><span class="p">(</span><span class="n">AuditingPlugin</span><span class="p">,</span> <span class="n">PathResolvablePlugin</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">raw_output_file</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;output_file&quot;</span><span class="p">,</span> <span class="s2">&quot;audit.log&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">raw_output_file</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_directory</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">set_config_directory</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config_directory</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Path</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Called by plugin manager after initialization.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">config_directory</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">config_directory</span><span class="p">)</span>
+        <span class="c1"># Resolve relative paths against config directory</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">raw_output_file</span><span class="p">)</span><span class="o">.</span><span class="n">is_absolute</span><span class="p">():</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">config_directory</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">raw_output_file</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_paths</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return list of validation errors (empty if valid).&quot;&quot;&quot;</span>
+        <span class="n">errors</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">parent</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">output_file</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span>
+        <span class="k">if</span> <span class="n">parent</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">access</span><span class="p">(</span><span class="n">parent</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">W_OK</span><span class="p">):</span>
+            <span class="n">errors</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No write permission: </span><span class="si">{</span><span class="n">parent</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">errors</span>
+</code></pre>
+<h3 id="using-baseauditingplugin">Using BaseAuditingPlugin</h3>
+<p>For file-based auditing, extend <code>BaseAuditingPlugin</code> instead of <code>AuditingPlugin</code> directly. It provides:</p>
+<ul>
+<li>Rotating file handlers</li>
+<li>Path resolution</li>
+<li>Request duration tracking</li>
+<li>Log sanitization</li>
+<li>Buffering for early events</li>
+</ul>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.plugins.auditing.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseAuditingPlugin</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MyJsonAuditingPlugin</span><span class="p">(</span><span class="n">BaseAuditingPlugin</span><span class="p">):</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;My JSON Logger&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>  <span class="c1"># Handles output_file, rotation, etc.</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_format_request_entry</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Format extracted request data into log entry.&quot;&quot;&quot;</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_format_response_entry</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_format_notification_entry</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+        <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">data</span><span class="p">)</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span>
+</code></pre>
+<h2 id="configuration">Configuration</h2>
+<h3 id="json-schema-for-tui">JSON Schema for TUI</h3>
+<p>Plugins can provide JSON Schema for automatic TUI form generation:</p>
+<pre><code class="language-python"><span class="nd">@classmethod</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_json_schema</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;$schema&quot;</span><span class="p">:</span> <span class="s2">&quot;https://json-schema.org/draft/2020-12/schema&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;object&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;enum&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="s2">&quot;redact&quot;</span><span class="p">,</span> <span class="s2">&quot;audit_only&quot;</span><span class="p">],</span>
+                <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;What to do when PII is detected&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="s2">&quot;redact&quot;</span><span class="p">,</span>
+            <span class="p">},</span>
+            <span class="s2">&quot;patterns&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;array&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;items&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">},</span>
+                <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Custom regex patterns to detect&quot;</span><span class="p">,</span>
+                <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">[],</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;additionalProperties&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">}</span>
+</code></pre>
+<h3 id="schema-defaults-requirement">Schema Defaults Requirement</h3>
+<p><strong>Important:</strong> If your schema defines a field as <code>required</code>, you must also provide a <code>default</code> value:</p>
+<pre><code class="language-python"><span class="c1"># CORRECT - required field has default</span>
+<span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="s2">&quot;output_file&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="s2">&quot;logs/audit.log&quot;</span><span class="p">,</span>  <span class="c1"># Default provided</span>
+    <span class="p">},</span>
+<span class="p">},</span>
+<span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;output_file&quot;</span><span class="p">],</span>
+
+<span class="c1"># WRONG - will crash TUI when enabling plugin</span>
+<span class="s2">&quot;properties&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="s2">&quot;output_file&quot;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;string&quot;</span><span class="p">,</span>
+        <span class="c1"># No default!</span>
+    <span class="p">},</span>
+<span class="p">},</span>
+<span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;output_file&quot;</span><span class="p">],</span>
+</code></pre>
+<p>The TUI creates initial configuration using schema defaults when a plugin is enabled. Missing defaults for required fields will cause errors.</p>
+<h3 id="constructor-pattern">Constructor Pattern</h3>
+<p>Parse and validate configuration in <code>__init__</code>:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
+    <span class="c1"># Validate required fields</span>
+    <span class="k">if</span> <span class="s2">&quot;output_file&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">config</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;output_file is required&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Store validated values</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">output_file</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;output_file&quot;</span><span class="p">]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="s2">&quot;redact&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Validate enum values</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;block&quot;</span><span class="p">,</span> <span class="s2">&quot;redact&quot;</span><span class="p">,</span> <span class="s2">&quot;audit_only&quot;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid action: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">action</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre>
+<h2 id="tui-integration">TUI Integration</h2>
+<h3 id="display-metadata">Display Metadata</h3>
+<p>Provide class attributes for TUI display:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">MyPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+    <span class="c1"># Required for TUI visibility</span>
+    <span class="n">DISPLAY_NAME</span> <span class="o">=</span> <span class="s2">&quot;My Plugin&quot;</span>           <span class="c1"># Human-readable name</span>
+    <span class="n">DESCRIPTION</span> <span class="o">=</span> <span class="s2">&quot;What this plugin does.&quot;</span>  <span class="c1"># Short description</span>
+
+    <span class="c1"># Middleware and Security plugins only (not Auditing)</span>
+    <span class="n">DISPLAY_SCOPE</span> <span class="o">=</span> <span class="s2">&quot;global&quot;</span>  <span class="c1"># &quot;global&quot;, &quot;server_aware&quot;, or &quot;server_specific&quot;</span>
+</code></pre>
+<h3 id="status-display">Status Display</h3>
+<p>Override <code>describe_status</code> for custom status text in the TUI:</p>
+<pre><code class="language-python"><span class="nd">@classmethod</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">describe_status</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate status text from config (without instantiating plugin).&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;Disabled&quot;</span>
+
+    <span class="n">action</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;action&quot;</span><span class="p">,</span> <span class="s2">&quot;redact&quot;</span><span class="p">)</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;patterns&quot;</span><span class="p">,</span> <span class="p">[]))</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">action</span><span class="o">.</span><span class="n">title</span><span class="p">()</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">count</span><span class="si">}</span><span class="s2"> patterns&quot;</span>
+</code></pre>
+<h3 id="available-actions">Available Actions</h3>
+<p>Override <code>get_display_actions</code> for TUI action buttons:</p>
+<pre><code class="language-python"><span class="nd">@classmethod</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_display_actions</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">config</span> <span class="ow">and</span> <span class="n">config</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;enabled&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">):</span>
+        <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Configure&quot;</span><span class="p">,</span> <span class="s2">&quot;Test&quot;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;Setup&quot;</span><span class="p">]</span>
+</code></pre>
+<h2 id="error-handling">Error Handling</h2>
+<h3 id="critical-vs-non-critical">Critical vs Non-Critical</h3>
+<p>All plugins default to <code>critical: true</code> (fail-closed). Set <code>critical: false</code> for fail-open behavior:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my_plugin</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Plugin errors won&#39;t halt processing</span>
+</code></pre>
+<p>In code, check criticality:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]):</span>
+    <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="c1"># self.critical is set by parent class from config</span>
+
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">critical</span><span class="p">:</span>
+        <span class="c1"># Fail loudly on config errors</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Invalid config&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Log warning but continue</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Invalid config, using defaults&quot;</span><span class="p">)</span>
+</code></pre>
+<h3 id="graceful-degradation">Graceful Degradation</h3>
+<p>For non-critical plugins, handle errors gracefully:</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Your logic</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">critical</span><span class="p">:</span>
+            <span class="k">raise</span>  <span class="c1"># Let it fail</span>
+        <span class="c1"># Non-critical: log and pass through</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Plugin error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Error, defaulting to allow&quot;</span><span class="p">)</span>
+</code></pre>
+<h2 id="handler-registration">Handler Registration</h2>
+<p>Every plugin module must export a <code>HANDLERS</code> dict:</p>
+<pre><code class="language-python"><span class="c1"># At module level (not inside a class)</span>
+<span class="n">HANDLERS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;my_plugin&quot;</span><span class="p">:</span> <span class="n">MyPlugin</span><span class="p">,</span>
+    <span class="s2">&quot;my_other_plugin&quot;</span><span class="p">:</span> <span class="n">MyOtherPlugin</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre>
+<p>The handler name is what you use in configuration:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my_plugin</span><span class="w">  </span><span class="c1"># Matches key in HANDLERS dict</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h2 id="testing">Testing</h2>
+<h3 id="unit-test-pattern">Unit Test Pattern</h3>
+<pre><code class="language-python"><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">my_plugin</span><span class="w"> </span><span class="kn">import</span> <span class="n">MySecurityPlugin</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.protocol.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">MCPRequest</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">plugin</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">MySecurityPlugin</span><span class="p">({</span><span class="s2">&quot;action&quot;</span><span class="p">:</span> <span class="s2">&quot;block&quot;</span><span class="p">})</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_blocks_dangerous_content</span><span class="p">(</span><span class="n">plugin</span><span class="p">):</span>
+    <span class="n">request</span> <span class="o">=</span> <span class="n">MCPRequest</span><span class="p">(</span>
+        <span class="n">jsonrpc</span><span class="o">=</span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span>
+        <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;1&quot;</span><span class="p">,</span>
+        <span class="n">method</span><span class="o">=</span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+        <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;read_file&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;/etc/passwd&quot;</span><span class="p">}},</span>
+    <span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">plugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="s2">&quot;test_server&quot;</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">result</span><span class="o">.</span><span class="n">allowed</span> <span class="ow">is</span> <span class="kc">False</span>
+    <span class="k">assert</span> <span class="s2">&quot;dangerous&quot;</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_allows_safe_content</span><span class="p">(</span><span class="n">plugin</span><span class="p">):</span>
+    <span class="n">request</span> <span class="o">=</span> <span class="n">MCPRequest</span><span class="p">(</span>
+        <span class="n">jsonrpc</span><span class="o">=</span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span>
+        <span class="nb">id</span><span class="o">=</span><span class="s2">&quot;2&quot;</span><span class="p">,</span>
+        <span class="n">method</span><span class="o">=</span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+        <span class="n">params</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;read_file&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="s2">&quot;/home/user/safe.txt&quot;</span><span class="p">}},</span>
+    <span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">plugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="s2">&quot;test_server&quot;</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">result</span><span class="o">.</span><span class="n">allowed</span> <span class="ow">is</span> <span class="kc">True</span>
+</code></pre>
+<h3 id="testing-with-processingpipeline">Testing with ProcessingPipeline</h3>
+<pre><code class="language-python"><span class="kn">from</span><span class="w"> </span><span class="nn">gatekit.plugins.interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">PipelineOutcome</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_auditing_plugin</span><span class="p">():</span>
+    <span class="n">plugin</span> <span class="o">=</span> <span class="n">MyAuditingPlugin</span><span class="p">({</span><span class="s2">&quot;output_file&quot;</span><span class="p">:</span> <span class="s2">&quot;/tmp/test.log&quot;</span><span class="p">})</span>
+
+    <span class="c1"># Create a mock pipeline</span>
+    <span class="n">pipeline</span> <span class="o">=</span> <span class="n">ProcessingPipeline</span><span class="p">(</span>
+        <span class="n">original_content</span><span class="o">=</span><span class="n">request</span><span class="p">,</span>
+        <span class="n">pipeline_outcome</span><span class="o">=</span><span class="n">PipelineOutcome</span><span class="o">.</span><span class="n">ALLOWED</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Should not raise</span>
+    <span class="k">await</span> <span class="n">plugin</span><span class="o">.</span><span class="n">log_request</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">,</span> <span class="s2">&quot;test_server&quot;</span><span class="p">)</span>
+</code></pre>
+<h2 id="reference">Reference</h2>
+<h3 id="pluginresult-fields">PluginResult Fields</h3>
+<table>
+<thead>
+<tr>
+  <th>Field</th>
+  <th>Type</th>
+  <th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>allowed</code></td>
+  <td><code>Optional[bool]</code></td>
+  <td>Security decision (<code>True</code>/<code>False</code>/<code>None</code>)</td>
+</tr>
+<tr>
+  <td><code>modified_content</code></td>
+  <td><code>Optional[MCPRequest\|MCPResponse\|MCPNotification]</code></td>
+  <td>Transformed message</td>
+</tr>
+<tr>
+  <td><code>completed_response</code></td>
+  <td><code>Optional[MCPResponse]</code></td>
+  <td>Short-circuit response (ends pipeline)</td>
+</tr>
+<tr>
+  <td><code>reason</code></td>
+  <td><code>str</code></td>
+  <td>Human-readable explanation</td>
+</tr>
+<tr>
+  <td><code>metadata</code></td>
+  <td><code>Dict[str, Any]</code></td>
+  <td>Extra data for auditing</td>
+</tr>
+</tbody>
+</table>
+<h3 id="stageoutcome-values">StageOutcome Values</h3>
+<table>
+<thead>
+<tr>
+  <th>Value</th>
+  <th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>ALLOWED</code></td>
+  <td>Security plugin allowed the message</td>
+</tr>
+<tr>
+  <td><code>BLOCKED</code></td>
+  <td>Security plugin blocked the message</td>
+</tr>
+<tr>
+  <td><code>MODIFIED</code></td>
+  <td>Plugin modified the content</td>
+</tr>
+<tr>
+  <td><code>COMPLETED_BY_MIDDLEWARE</code></td>
+  <td>Middleware returned a complete response</td>
+</tr>
+<tr>
+  <td><code>ERROR</code></td>
+  <td>Plugin raised an exception</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pipelineoutcome-values">PipelineOutcome Values</h3>
+<table>
+<thead>
+<tr>
+  <th>Value</th>
+  <th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>ALLOWED</code></td>
+  <td>Message allowed through</td>
+</tr>
+<tr>
+  <td><code>BLOCKED</code></td>
+  <td>Message blocked by security plugin</td>
+</tr>
+<tr>
+  <td><code>MODIFIED</code></td>
+  <td>Message was modified</td>
+</tr>
+<tr>
+  <td><code>COMPLETED_BY_MIDDLEWARE</code></td>
+  <td>Middleware completed the request</td>
+</tr>
+<tr>
+  <td><code>ERROR</code></td>
+  <td>Pipeline error</td>
+</tr>
+<tr>
+  <td><code>NO_SECURITY_EVALUATION</code></td>
+  <td>No security plugin evaluated the message</td>
+</tr>
+</tbody>
+</table>
+<h3 id="plugin-class-attributes">Plugin Class Attributes</h3>
+<table>
+<thead>
+<tr>
+  <th>Attribute</th>
+  <th>Required</th>
+  <th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>DISPLAY_NAME</code></td>
+  <td>Yes</td>
+  <td>Human-readable name for TUI</td>
+</tr>
+<tr>
+  <td><code>DESCRIPTION</code></td>
+  <td>Yes</td>
+  <td>Short description for TUI</td>
+</tr>
+<tr>
+  <td><code>DISPLAY_SCOPE</code></td>
+  <td>Middleware and Security</td>
+  <td><code>&quot;global&quot;</code>, <code>&quot;server_aware&quot;</code>, or <code>&quot;server_specific&quot;</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="inherited-properties">Inherited Properties</h3>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Source</th>
+  <th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>self.critical</code></td>
+  <td>Config <code>critical</code></td>
+  <td><code>True</code></td>
+</tr>
+<tr>
+  <td><code>self.priority</code></td>
+  <td>Config <code>priority</code></td>
+  <td><code>50</code> (Middleware and Security)</td>
+</tr>
+</tbody>
+</table>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

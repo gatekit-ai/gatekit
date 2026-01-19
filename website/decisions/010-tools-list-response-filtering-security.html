@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-010: Tools/List Response Filtering - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit's tool manager plugin controls tool visibility and execution. The original implementation had a gap: clients could still discover hidden tools throug...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-010-toolslist-response-filtering">ADR-010: Tools/List Response Filtering</h1>
+<p><strong>Note</strong>: Tool management is now implemented as a <strong>middleware plugin</strong> (<code>tool_manager</code>), not a security plugin. The plugin uses implicit allowlist semantics (no <code>mode</code> field). See ADR-020 for middleware architecture.</p>
+<h2 id="context">Context</h2>
+<p>Gatekit's tool manager plugin controls tool visibility and execution. The original implementation had a gap: clients could still discover hidden tools through <code>tools/list</code> requests, leading to:</p>
+<ol>
+<li><strong>Information Disclosure</strong>: Clients learn about tools they cannot execute</li>
+<li><strong>Poor User Experience</strong>: Users see tools they cannot use, causing confusion</li>
+<li><strong>Security Inconsistency</strong>: Policy applies to execution but not discovery</li>
+<li><strong>Attack Surface</strong>: Attackers can enumerate all available tools regardless of permissions</li>
+</ol>
+<h3 id="original-implementation-gap">Original Implementation Gap</h3>
+<pre><code class="language-yaml"><span class="c1"># Configuration allows specific tools</span>
+<span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span>
+</code></pre>
+<p><strong>Existing behavior</strong>:</p>
+<ul>
+<li><code>tools/call</code> with <code>read_file</code> → ✅ Allowed</li>
+<li><code>tools/call</code> with <code>delete_file</code> → ❌ Blocked</li>
+<li><code>tools/list</code> → Shows all tools including <code>delete_file</code> ⚠️ <strong>Information leak</strong></li>
+</ul>
+<h2 id="decision">Decision</h2>
+<p>We will <strong>extend the tool manager plugin to filter <code>tools/list</code> responses</strong> according to the same allowlist that controls tool execution, ensuring consistent behavior across both tool discovery and tool execution.</p>
+<h3 id="unified-model">Unified Model</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">ToolManagerPlugin</span><span class="p">(</span><span class="n">MiddlewarePlugin</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Control tool execution (existing functionality).&quot;&quot;&quot;</span>
+        <span class="c1"># Block tools/call for tools not in allowlist</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Filter tool discovery (new functionality).&quot;&quot;&quot;</span>
+        <span class="c1"># Filter tools/list to show only allowed tools</span>
+</code></pre>
+<h3 id="behavior">Behavior</h3>
+<p>The tool manager uses <strong>implicit allowlist semantics</strong> (no <code>mode</code> field):</p>
+<table>
+<thead>
+<tr>
+  <th>Configuration</th>
+  <th>tools/call Behavior</th>
+  <th>tools/list Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Tools in list</td>
+  <td>Allow execution</td>
+  <td>Show in list</td>
+</tr>
+<tr>
+  <td>Tools NOT in list</td>
+  <td>Block execution</td>
+  <td>Hide from list</td>
+</tr>
+</tbody>
+</table>
+<h3 id="implementation-example">Implementation Example</h3>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span> <span class="ow">and</span> <span class="s2">&quot;tools&quot;</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
+        <span class="c1"># Filter tools list based on allowlist</span>
+        <span class="n">original_tools</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;tools&quot;</span><span class="p">]</span>
+        <span class="n">filtered_tools</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_tools</span><span class="p">(</span><span class="n">original_tools</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">filtered_tools</span><span class="p">)</span> <span class="o">!=</span> <span class="nb">len</span><span class="p">(</span><span class="n">original_tools</span><span class="p">):</span>
+            <span class="c1"># Create modified response with filtered tools</span>
+            <span class="n">modified_response</span> <span class="o">=</span> <span class="n">create_filtered_response</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">filtered_tools</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+                <span class="n">modified_content</span><span class="o">=</span><span class="n">modified_response</span><span class="p">,</span>
+                <span class="n">reason</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Filtered </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">original_tools</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="n">filtered_tools</span><span class="p">)</span><span class="si">}</span><span class="s2"> tools&quot;</span>
+            <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;No filtering needed&quot;</span><span class="p">)</span>
+</code></pre>
+<p>Note: Middleware plugins return <code>PluginResult</code> without setting <code>allowed</code> (security decision). The <code>modified_content</code> field holds the transformed response.</p>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-warning-based-approach">Alternative 1: Warning-Based Approach</h3>
+<p>Show all tools but warn when blocked tools are called:</p>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;tools&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;read_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Read a file&quot;</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;delete_file&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;⚠️ Restricted - Delete a file&quot;</span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Still leaks information</strong>: Attackers learn about restricted tools</li>
+<li><strong>User confusion</strong>: Users don't understand why some tools are marked restricted</li>
+<li><strong>Inconsistent security</strong>: Discovery policy differs from execution policy</li>
+<li><strong>Implementation complexity</strong>: Requires response modification anyway</li>
+</ul>
+<h3 id="alternative-2-separate-discovery-policy">Alternative 2: Separate Discovery Policy</h3>
+<p>Allow different policies for discovery vs. execution:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">          </span><span class="nt">execution_mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;allowlist&quot;</span>
+<span class="w">          </span><span class="nt">execution_tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;read_file&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">          </span><span class="nt">discovery_mode</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;allow_all&quot;</span><span class="w">  </span><span class="c1"># Show all, block execution</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Configuration complexity</strong>: Doubles the configuration surface area</li>
+<li><strong>Security inconsistency</strong>: Policies can diverge and create gaps</li>
+<li><strong>User confusion</strong>: Hard to understand why visible tools can't be executed</li>
+<li><strong>Maintenance burden</strong>: Two policies to keep in sync</li>
+</ul>
+<h3 id="alternative-3-client-side-filtering">Alternative 3: Client-Side Filtering</h3>
+<p>Let clients discover all tools but expect them to respect allowlists:</p>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Zero security value</strong>: Clients can ignore filtering entirely</li>
+<li><strong>Information disclosure</strong>: Attackers learn full tool inventory</li>
+<li><strong>Trust model violation</strong>: Security enforcement should be server-side</li>
+<li><strong>Poor user experience</strong>: Clients must implement their own filtering logic</li>
+</ul>
+<h3 id="alternative-4-dynamic-tool-registration">Alternative 4: Dynamic Tool Registration</h3>
+<p>Only register allowed tools with the upstream server:</p>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Architectural complexity</strong>: Requires upstream server modification</li>
+<li><strong>Runtime inflexibility</strong>: Can't change policies without server restart</li>
+<li><strong>Multiple client support</strong>: Hard to support different policies per client</li>
+<li><strong>Proxy bypass</strong>: Defeats the purpose of a security proxy</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Consistent Security</strong>: Same policy controls both discovery and execution</li>
+<li><strong>Information Protection</strong>: Clients only see tools they can actually use</li>
+<li><strong>Better User Experience</strong>: No confusion about unavailable tools</li>
+<li><strong>Security Defense in Depth</strong>: Multiple layers enforce the same policy</li>
+<li><strong>Clean Mental Model</strong>: One policy, consistent enforcement</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Response Modification Complexity</strong>: Requires sophisticated response filtering</li>
+<li><strong>Performance Overhead</strong>: Additional processing for every tools/list response</li>
+<li><strong>Debugging Complexity</strong>: Tools &quot;disappear&quot; from discovery, harder to troubleshoot</li>
+<li><strong>Client Assumption Breaking</strong>: Clients might assume discovery == availability</li>
+</ul>
+<h3 id="risk-mitigation">Risk Mitigation</h3>
+<ol>
+<li><strong>Comprehensive Audit Logging</strong>: Log all filtering decisions for transparency</li>
+<li><strong>Detailed Documentation</strong>: Explain filtering behavior and troubleshooting</li>
+<li><strong>Allow-All Mode</strong>: Provide escape hatch for debugging and development</li>
+<li><strong>Error Handling</strong>: Graceful degradation when filtering fails</li>
+</ol>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="filtering-logic">Filtering Logic</h3>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">_filter_tools</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tools_list</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">Dict</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Filter tools list according to allowlist.&quot;&quot;&quot;</span>
+    <span class="n">filtered_tools</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">tool</span> <span class="ow">in</span> <span class="n">tools_list</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tool</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;name&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">tool</span><span class="p">:</span>
+            <span class="k">continue</span>  <span class="c1"># Skip malformed tools</span>
+
+        <span class="n">tool_name</span> <span class="o">=</span> <span class="n">tool</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span>
+
+        <span class="c1"># Implicit allowlist: only show tools in the configured list</span>
+        <span class="k">if</span> <span class="n">tool_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">allowed_tools</span><span class="p">:</span>
+            <span class="n">filtered_tools</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tool</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">filtered_tools</span>
+</code></pre>
+<p>The tool manager also supports <strong>tool renaming</strong> - tools can be displayed with different names/descriptions to clients while preserving the actual tool name for execution.</p>
+<h3 id="audit-logging">Audit Logging</h3>
+<pre><code class="language-python"><span class="c1"># Log filtering decisions for security audit</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">&quot;Tool manager filtered tools/list response: &quot;</span>
+    <span class="sa">f</span><span class="s2">&quot;original=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">original_tools</span><span class="p">)</span><span class="si">}</span><span class="s2"> tools, filtered=</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">filtered_tools</span><span class="p">)</span><span class="si">}</span><span class="s2"> tools, &quot;</span>
+    <span class="sa">f</span><span class="s2">&quot;removed=</span><span class="si">{</span><span class="n">removed_tool_names</span><span class="si">}</span><span class="s2">, allowed=</span><span class="si">{</span><span class="n">allowed_tool_names</span><span class="si">}</span><span class="s2">, &quot;</span>
+    <span class="sa">f</span><span class="s2">&quot;request_id=</span><span class="si">{</span><span class="n">response</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)</span>
+</code></pre>
+<h3 id="configuration-example">Configuration Example</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span>
+<span class="w">          </span><span class="c1"># This applies to BOTH:</span>
+<span class="w">          </span><span class="c1"># 1. tools/call requests (execution control)</span>
+<span class="w">          </span><span class="c1"># 2. tools/list responses (discovery control)</span>
+</code></pre>
+<p>Tools can also be renamed for display:</p>
+<pre><code class="language-yaml"><span class="nt">tools</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;internal_read_file&quot;</span>
+<span class="w">    </span><span class="nt">display_name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">    </span><span class="nt">display_description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Read</span><span class="nv"> </span><span class="s">file</span><span class="nv"> </span><span class="s">contents&quot;</span>
+</code></pre>
+<h3 id="error-handling">Error Handling</h3>
+<p>Error handling for tool filtering follows the plugin's <code>critical</code> setting (default: <code>true</code>). See ADR-006 for critical plugin failure modes.</p>
+<p>This unified model ensures that Gatekit provides consistent behavior for both tool execution and tool discovery, eliminating information disclosure while improving user experience.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

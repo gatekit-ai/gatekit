@@ -1,0 +1,10 @@
+handler: tool_manager
+category: middleware
+description: >-
+  Explicit blocklist by providing an empty allowlist. Useful for validating that
+  the schema accepts tools: [] and that the plugin surfaces a friendly message.
+config:
+  enabled: true
+  critical: true
+  priority: 50
+  tools: []

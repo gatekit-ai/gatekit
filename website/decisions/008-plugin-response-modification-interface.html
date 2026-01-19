@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-008: Plugin Content Modification Interface - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit's original plugin architecture supported allow/block decisions for requests. However, implementing tools/list response filtering revealed a need for ...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-008-plugin-content-modification-interface">ADR-008: Plugin Content Modification Interface</h1>
+<p><strong>Note</strong>: This ADR uses the current terminology (<code>PluginResult</code>, <code>process_request</code>, <code>process_response</code>). See ADR-022 for the unified PluginResult design.</p>
+<h2 id="context">Context</h2>
+<h3 id="initial-requirement">Initial Requirement</h3>
+<p>Gatekit's original plugin architecture supported allow/block decisions for requests. However, implementing tools/list response filtering revealed a need for plugins to modify responses, not just allow or block them entirely.</p>
+<p>The requirement emerged from the tool allowlist security plugin, which needed to filter <code>tools/list</code> responses to show only allowed tools while preserving the overall response structure and other fields.</p>
+<h3 id="original-plugin-interface-limitation">Original Plugin Interface Limitation</h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="n">allowed</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="c1"># No way to specify modified content</span>
+</code></pre>
+<p>This interface only supported binary allow/block decisions, making content modification impossible without significant architectural changes.</p>
+<h2 id="decision">Decision</h2>
+<p>We will <strong>extend the existing <code>PluginResult</code> interface</strong> to support generic content modification through a <code>modified_content</code> field that can handle any MCP message type:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="n">allowed</span><span class="p">:</span> <span class="nb">bool</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">modified_content</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">MCPRequest</span><span class="p">,</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">MCPNotification</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+</code></pre>
+<h3 id="design-principles">Design Principles</h3>
+<ol>
+<li><strong>Generic Content Modification</strong>: Support modification of requests, responses, and notifications through a single field</li>
+<li><strong>Type Safety</strong>: Use Union types and runtime type checking to ensure proper handling</li>
+<li><strong>Security First</strong>: Plugin manager must respect content modifications for all message types</li>
+<li><strong>Clear Intent</strong>: Field name explicitly indicates it can contain any content type</li>
+<li><strong>Backward Compatibility</strong>: Existing plugins continue to work without changes (those not modifying content)</li>
+</ol>
+<h3 id="plugin-manager-processing">Plugin Manager Processing</h3>
+<p>Each processing method will check for the appropriate content type:</p>
+<pre><code class="language-python"><span class="c1"># Request processing</span>
+<span class="k">if</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span><span class="p">,</span> <span class="n">MCPRequest</span><span class="p">):</span>
+    <span class="n">current_request</span> <span class="o">=</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span>
+
+<span class="c1"># Response processing  </span>
+<span class="k">if</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span><span class="p">,</span> <span class="n">MCPResponse</span><span class="p">):</span>
+    <span class="n">current_response</span> <span class="o">=</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span>
+
+<span class="c1"># Notification processing</span>
+<span class="k">if</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span><span class="p">,</span> <span class="n">MCPNotification</span><span class="p">):</span>
+    <span class="n">current_notification</span> <span class="o">=</span> <span class="n">decision</span><span class="o">.</span><span class="n">modified_content</span>
+</code></pre>
+<h3 id="usage-pattern">Usage Pattern</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">BasicPiiFilterPlugin</span><span class="p">(</span><span class="n">SecurityPlugin</span><span class="p">):</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;redact&quot;</span> <span class="ow">and</span> <span class="n">contains_pii</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+            <span class="n">redacted_request</span> <span class="o">=</span> <span class="n">redact_pii</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+                <span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;PII detected and redacted from request&quot;</span><span class="p">,</span>
+                <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;pii_redacted&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+                <span class="n">modified_content</span><span class="o">=</span><span class="n">redacted_request</span>  <span class="c1"># Proper field for request modification</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;No PII detected&quot;</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">action</span> <span class="o">==</span> <span class="s2">&quot;redact&quot;</span> <span class="ow">and</span> <span class="n">contains_pii</span><span class="p">(</span><span class="n">response</span><span class="p">):</span>
+            <span class="n">redacted_response</span> <span class="o">=</span> <span class="n">redact_pii</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+                <span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;PII detected and redacted from response&quot;</span><span class="p">,</span>
+                <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;pii_redacted&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+                <span class="n">modified_content</span><span class="o">=</span><span class="n">redacted_response</span>  <span class="c1"># Same field for response modification</span>
+            <span class="p">)</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;No PII detected&quot;</span><span class="p">)</span>
+</code></pre>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-response-specific-field-original-design-rejected">Alternative 1: Response-Specific Field (Original Design - Rejected)</h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="n">modified_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Response-only</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Cannot handle request or notification modifications</li>
+<li>Forces inappropriate workarounds for request modification (security vulnerability)</li>
+<li>Inconsistent interface for different message types</li>
+</ul>
+<h3 id="alternative-2-separate-fields-for-each-type">Alternative 2: Separate Fields for Each Type</h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="n">modified_request</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPRequest</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">modified_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  
+    <span class="n">modified_notification</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPNotification</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Interface bloat with multiple optional fields</li>
+<li>Plugins can only modify one type per decision anyway</li>
+<li>More complex validation logic required</li>
+</ul>
+<h3 id="alternative-3-backward-compatibility-with-deprecation">Alternative 3: Backward Compatibility with Deprecation</h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="n">modified_content</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">MCPRequest</span><span class="p">,</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">MCPNotification</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">modified_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Deprecated</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Added complexity for zero benefit (no existing users in v0.1.0)</li>
+<li>Risk of continued use of deprecated field</li>
+<li>Clean break preferred for security-critical fix</li>
+</ul>
+<h3 id="alternative-4-separate-decision-types">Alternative 4: Separate Decision Types</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">RequestDecision</span><span class="p">(</span><span class="n">PluginResult</span><span class="p">):</span>
+    <span class="n">modified_request</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPRequest</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ResponseDecision</span><span class="p">(</span><span class="n">PluginResult</span><span class="p">):</span>  
+    <span class="n">modified_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Plugin interface complexity increases significantly</li>
+<li>Method signatures become more complex</li>
+<li>Plugin manager needs type-specific handling</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Security Fix</strong>: Resolves critical vulnerability in request modification handling</li>
+<li><strong>Unified Architecture</strong>: Single field supports all content modification use cases</li>
+<li><strong>Type Safety</strong>: Runtime type checking prevents misuse</li>
+<li><strong>Clean Design</strong>: No deprecated fields or backward compatibility complexity</li>
+<li><strong>Future Proof</strong>: Supports any future MCP message types</li>
+<li><strong>Backward Compatible</strong>: Existing plugins that don't modify content continue to work unchanged</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Breaking Changes</strong>: Any plugins using <code>modified_response</code> must be updated (none exist in v0.1.0)</li>
+<li><strong>Implementation Effort</strong>: Requires updates across codebase and test suite</li>
+<li><strong>Documentation Updates</strong>: All documentation and examples must be updated</li>
+<li><strong>Interface Complexity</strong>: <code>PluginResult</code> now has Union types requiring type checking</li>
+</ul>
+<h3 id="implementation-requirements">Implementation Requirements</h3>
+<ol>
+<li><strong>PluginResult Interface</strong>: Replace <code>modified_response</code> with <code>modified_content</code></li>
+<li><strong>Plugin Manager Updates</strong>: Must handle <code>modified_content</code> field in all processing pipelines</li>
+<li><strong>Security Plugins</strong>: Update PII filter and other plugins to use new field</li>
+<li><strong>Test Suite</strong>: Update all tests referencing <code>modified_response</code></li>
+<li><strong>Validation</strong>: Content modifications must be validated for correctness and type safety</li>
+<li><strong>Logging</strong>: Plugin decisions with modifications need appropriate audit logging</li>
+</ol>
+<h3 id="migration-strategy">Migration Strategy</h3>
+<p>Since this is v0.1.0 with no existing users:</p>
+<ul>
+<li><strong>No backward compatibility</strong> required</li>
+<li><strong>Clean removal</strong> of response-specific design</li>
+<li><strong>Complete migration</strong> to generic content modification architecture</li>
+</ul>
+<h3 id="risk-mitigation">Risk Mitigation</h3>
+<ul>
+<li><strong>Comprehensive Testing</strong>: Full test coverage for all modification scenarios</li>
+<li><strong>Code Review</strong>: Careful review of all plugin manager changes</li>
+<li><strong>Documentation</strong>: Clear migration guide and security considerations</li>
+</ul>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="pluginresult-structure">PluginResult Structure</h3>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Unified result from any plugin processing.&quot;&quot;&quot;</span>
+
+    <span class="n">allowed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Security decision (None for middleware)</span>
+    <span class="n">modified_content</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">MCPRequest</span><span class="p">,</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">MCPNotification</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">completed_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># For middleware short-circuit</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate state consistency.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># Can&#39;t set both modified_content and completed_response</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">modified_content</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">completed_response</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot set both modified_content and completed_response&quot;</span><span class="p">)</span>
+</code></pre>
+<p>See ADR-022 for the complete unified PluginResult design.</p>
+<h3 id="plugin-manager-processing">Plugin Manager Processing</h3>
+<p>The plugin manager processes all plugins (middleware and security) through a unified priority-sorted pipeline. See ADR-020 for the middleware architecture and ADR-009 for sequential processing details.</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">,</span> <span class="n">server_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ProcessingPipeline</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Process request through all plugins sequentially by priority.&quot;&quot;&quot;</span>
+    <span class="c1"># Plugins are sorted by priority (0-100, lower = higher priority)</span>
+    <span class="c1"># Both middleware and security plugins are processed in order</span>
+    <span class="c1"># Returns a ProcessingPipeline with full visibility into each stage</span>
+</code></pre>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

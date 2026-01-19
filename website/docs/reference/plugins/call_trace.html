@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Call Trace - Gatekit Documentation</title>
+  <meta name="description" content="Append diagnostic trace information to tool responses for debugging, visibility, and audit log correlation.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="call-trace">Call Trace</h1>
+<p>Append diagnostic trace information to tool responses for debugging, visibility, and audit log correlation.</p>
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Handler</td>
+  <td><code>call_trace</code></td>
+</tr>
+<tr>
+  <td>Type</td>
+  <td>Middleware</td>
+</tr>
+<tr>
+  <td>Scope</td>
+  <td>Global (can be configured globally or per-server)</td>
+</tr>
+<tr>
+  <td>Default Priority</td>
+  <td>90 (runs late in pipeline)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-it-works">How It Works</h2>
+<p>The call trace plugin:</p>
+<ol>
+<li>Records the start time when a <code>tools/call</code> request arrives</li>
+<li>After the response returns, appends a formatted trace block to the response content</li>
+<li>Provides visibility into which server handled the request, timing, and audit log correlation</li>
+</ol>
+<p>This is useful for:</p>
+<ul>
+<li><strong>Debugging</strong> - See exactly what happened for each tool call</li>
+<li><strong>Multi-server visibility</strong> - Know which server handled the request</li>
+<li><strong>Audit correlation</strong> - Find related entries in audit logs using request ID and timestamp</li>
+</ul>
+<h2 id="example-output">Example Output</h2>
+<pre><code class="language-text">---
+🔍 **Gatekit Gateway Trace**
+<span class="k">-</span> Server: filesystem
+<span class="k">-</span> Tool: read_file
+<span class="k">-</span> Params: {&quot;path&quot;: &quot;/home/user/projects/gatekit/README.md&quot;}
+<span class="k">-</span> Response: 2.3 KB
+<span class="k">-</span> Duration: 45ms
+<span class="k">-</span> Request ID: 1
+<span class="k">-</span> Timestamp: 2025-01-12T15:30:45Z
+
+Search your audit logs near timestamp 2025-01-12T15:30:45Z (request_id: 1) to see the audit trail for this request.
+To find audit log locations, open your Gatekit config using <span class="sb">`gatekit &lt;path_to_config.yaml&gt;`</span>
+---
+</code></pre>
+<h2 id="configuration-reference">Configuration Reference</h2>
+<h3 id="max_param_length">max_param_length</h3>
+<p>Maximum characters to display for tool parameters. Longer values are truncated with <code>...</code>.</p>
+<p><strong>Type:</strong> integer (minimum: 0)
+<strong>Default:</strong> <code>200</code></p>
+<h3 id="trace_fields">trace_fields</h3>
+<p>Configure which fields appear in the trace output.</p>
+<table>
+<thead>
+<tr>
+  <th>Field</th>
+  <th>Type</th>
+  <th>Default</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>server</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>Which server handled the request</td>
+</tr>
+<tr>
+  <td><code>tool</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>Which tool was called</td>
+</tr>
+<tr>
+  <td><code>params</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>Tool call parameters (respects max_param_length)</td>
+</tr>
+<tr>
+  <td><code>response_size</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>Response size (e.g., &quot;2.3 KB&quot;)</td>
+</tr>
+<tr>
+  <td><code>duration</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>Processing time in milliseconds</td>
+</tr>
+<tr>
+  <td><code>request_id</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>MCP request ID for audit log correlation</td>
+</tr>
+<tr>
+  <td><code>timestamp</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>ISO 8601 timestamp</td>
+</tr>
+</tbody>
+</table>
+<h2 id="yaml-configuration">YAML Configuration</h2>
+<h3 id="minimal-configuration">Minimal Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">call_trace</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h3 id="full-configuration">Full Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">call_trace</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90</span><span class="w">              </span><span class="c1"># Run late in pipeline (after other middleware)</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">           </span><span class="c1"># Don&#39;t block requests if tracing fails</span>
+
+<span class="w">    </span><span class="nt">max_param_length</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200</span><span class="w">     </span><span class="c1"># Truncate params longer than 200 chars</span>
+
+<span class="w">    </span><span class="nt">trace_fields</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">server</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">            </span><span class="c1"># Show server name</span>
+<span class="w">      </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">              </span><span class="c1"># Show tool name</span>
+<span class="w">      </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">            </span><span class="c1"># Show parameters</span>
+<span class="w">      </span><span class="nt">response_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">     </span><span class="c1"># Show response size</span>
+<span class="w">      </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">          </span><span class="c1"># Show timing</span>
+<span class="w">      </span><span class="nt">request_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">        </span><span class="c1"># Show request ID</span>
+<span class="w">      </span><span class="nt">timestamp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">         </span><span class="c1"># Show timestamp</span>
+</code></pre>
+<h3 id="minimal-trace-reduced-noise">Minimal Trace (Reduced Noise)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">call_trace</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_param_length</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">      </span><span class="c1"># Shorter param display</span>
+
+<span class="w">    </span><span class="nt">trace_fields</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">server</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">params</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">           </span><span class="c1"># Hide parameters</span>
+<span class="w">      </span><span class="nt">response_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">    </span><span class="c1"># Hide size</span>
+<span class="w">      </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">          </span><span class="c1"># Keep timing</span>
+<span class="w">      </span><span class="nt">request_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">        </span><span class="c1"># Keep for correlation</span>
+<span class="w">      </span><span class="nt">timestamp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">        </span><span class="c1"># Hide timestamp</span>
+</code></pre>
+<h2 id="known-issues">Known Issues</h2>
+<p><strong>MCP servers with structuredContent:</strong> Some MCP servers return both <code>content</code> and <code>structuredContent</code> in their responses (e.g., <code>memory</code>, <code>sequential-thinking</code>). Claude Code appears to prefer displaying <code>structuredContent</code> when both are present, so the trace may not be visible in the UI. However, the trace IS recorded in audit logs regardless of client display behavior.</p>
+<h2 id="fail-open-behavior">Fail-Open Behavior</h2>
+<p>The call trace plugin is designed to fail open:</p>
+<ul>
+<li>If an error occurs during trace generation, the original response is returned unmodified</li>
+<li>Errors are logged but don't block the request</li>
+<li>Consider setting <code>critical: false</code> to ensure trace failures never block requests</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

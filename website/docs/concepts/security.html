@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gatekit Security Model - Gatekit Documentation</title>
+  <meta name="description" content="1. [Threat Model](#threat-model) 2. [Core Concepts](#core-concepts) 3. [Plugin Types](#plugin-types) 4. [Processing Pipeline Flow](#processing-pipeline-flow)...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../docs/getting-started.html">Get started</a>
+        <a href="../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html" class="active">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="gatekit-security-model">Gatekit Security Model</h1>
+<p><strong>Version</strong>: 0.1.0<br />
+<strong>Status</strong>: Authoritative Reference</p>
+<blockquote>
+<p><strong>Note</strong>: This document describes the ACTUAL behavior of the Gatekit security model as implemented. It serves as the single source of truth for security processing decisions.</p>
+</blockquote>
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#threat-model">Threat Model</a></li>
+<li><a href="#core-concepts">Core Concepts</a></li>
+<li><a href="#plugin-types">Plugin Types</a></li>
+<li><a href="#processing-pipeline-flow">Processing Pipeline Flow</a></li>
+<li><a href="#decision-trees">Decision Trees</a></li>
+<li><a href="#content-clearing-rules">Content Clearing Rules</a></li>
+<li><a href="#critical-vs-non-critical-plugin-handling">Critical vs Non-Critical Plugin Handling</a></li>
+<li><a href="#reason-handling">Reason Handling</a></li>
+<li><a href="#example-scenarios">Example Scenarios</a></li>
+</ol>
+<h2 id="threat-model">Threat Model</h2>
+<p>This section describes what Gatekit is designed to protect against, what it provides infrastructure for, and what falls outside its scope.</p>
+<h3 id="what-gatekit-protects-against">What Gatekit Protects Against</h3>
+<ul>
+<li><p><strong>Overly permissive tool access</strong>: The Tool Manager plugin filters which tools are visible to clients. Clients can only discover and call tools on the allowlist.</p>
+</li>
+<li><p><strong>Unaudited MCP traffic</strong>: Audit plugins log all requests, responses, and notifications flowing through the gateway.</p>
+</li>
+</ul>
+<h3 id="what-gatekit-provides-infrastructure-for">What Gatekit Provides Infrastructure For</h3>
+<ul>
+<li><p><strong>Bidirectional content filtering</strong>: Security plugins inspect both requests to servers and responses from servers. This allows filtering of malicious or sensitive content in either direction.</p>
+</li>
+<li><p><strong>Data exposure prevention</strong>: The plugin architecture supports security plugins that inspect content for PII, secrets, or other sensitive data.</p>
+</li>
+</ul>
+<blockquote>
+<p><strong>Note on built-in security plugins</strong>: The built-in plugins (<code>basic_pii_filter</code>, <code>basic_secrets_filter</code>, <code>basic_prompt_injection_defense</code>) use simple regex matching. They catch obvious patterns but not sophisticated obfuscation or encoding. For production use with sensitive data, implement plugins tailored to your specific data formats and threat model.</p>
+</blockquote>
+<h3 id="what-gatekit-does-not-protect-against">What Gatekit Does NOT Protect Against</h3>
+<ul>
+<li><p><strong>Upstream server process behavior</strong>: Gatekit filters MCP traffic but does not sandbox server processes. A malicious or compromised server can still access the filesystem, make network calls, or perform other actions outside the MCP protocol. Gatekit only sees what flows through the MCP channel.</p>
+</li>
+<li><p><strong>Attackers with host filesystem access</strong>: Configuration files, audit logs, and server processes reside on the host filesystem. Gatekit assumes the host is protected by appropriate OS-level access controls.</p>
+</li>
+<li><p><strong>Sophisticated encoding and obfuscation</strong>: Built-in regex-based detection catches common patterns (standard API key formats, obvious PII). It does not catch base64-encoded secrets, split credentials across multiple requests, or novel obfuscation techniques. Entropy detection can be bypassed by inserting special characters (e.g., <code>$@!^&amp;*#%</code>), which fragment high-entropy strings into pieces below the minimum length threshold.</p>
+</li>
+</ul>
+<h3 id="trust-boundaries">Trust Boundaries</h3>
+<table>
+<thead>
+<tr>
+  <th>Component</th>
+  <th>Trust Level</th>
+  <th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>MCP Clients</td>
+  <td><strong>Untrusted</strong></td>
+  <td>Gatekit filters what they can access and what data flows to/from them</td>
+</tr>
+<tr>
+  <td>Upstream Server Responses</td>
+  <td><strong>Filtered</strong></td>
+  <td>Security plugins can inspect and block malicious response content</td>
+</tr>
+<tr>
+  <td>Upstream Server Processes</td>
+  <td><strong>Trusted</strong></td>
+  <td>Not sandboxed; can access filesystem, network, etc.</td>
+</tr>
+<tr>
+  <td>Host Filesystem</td>
+  <td><strong>Trusted</strong></td>
+  <td>Config and logs assumed protected by OS permissions</td>
+</tr>
+</tbody>
+</table>
+<h3 id="audit-log-security">Audit Log Security</h3>
+<ul>
+<li><p><strong>Flagged content is not logged</strong>: When security plugins block or redact content, the sensitive data is cleared from pipeline stages before audit logging. Audit logs contain metadata about what happened, not the sensitive content itself. See <a href="#content-clearing-rules">Content Clearing Rules</a>.</p>
+</li>
+<li><p><strong>Log paths are not exposed to clients</strong>: Audit log file locations are not discoverable through the MCP protocol.</p>
+</li>
+<li><p><strong>File permissions</strong>: Protect audit log files with restrictive permissions (mode <code>0600</code> or <code>0700</code>). Logs contain metadata about tool usage patterns that may be sensitive even without redacted content.</p>
+</li>
+</ul>
+<h2 id="core-concepts">Core Concepts</h2>
+<h3 id="outcome-enums">Outcome Enums</h3>
+<h4 id="stageoutcome">StageOutcome</h4>
+<p>Represents the outcome of a single plugin's processing:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">StageOutcome</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="n">ALLOWED</span> <span class="o">=</span> <span class="s2">&quot;allowed&quot;</span>                             <span class="c1"># Plugin allowed request to continue</span>
+    <span class="n">BLOCKED</span> <span class="o">=</span> <span class="s2">&quot;blocked&quot;</span>                             <span class="c1"># Security plugin blocked the request</span>
+    <span class="n">MODIFIED</span> <span class="o">=</span> <span class="s2">&quot;modified&quot;</span>                           <span class="c1"># Plugin modified the content</span>
+    <span class="n">COMPLETED_BY_MIDDLEWARE</span> <span class="o">=</span> <span class="s2">&quot;completed_by_middleware&quot;</span>  <span class="c1"># Middleware provided a complete response</span>
+    <span class="n">ERROR</span> <span class="o">=</span> <span class="s2">&quot;error&quot;</span>                                 <span class="c1"># Plugin threw an exception</span>
+</code></pre>
+<h4 id="pipelineoutcome">PipelineOutcome</h4>
+<p>Represents the overall outcome of the entire processing pipeline:</p>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">PipelineOutcome</span><span class="p">(</span><span class="n">Enum</span><span class="p">):</span>
+    <span class="n">ALLOWED</span> <span class="o">=</span> <span class="s2">&quot;allowed&quot;</span>                            <span class="c1"># Request/response allowed through unchanged</span>
+    <span class="n">BLOCKED</span> <span class="o">=</span> <span class="s2">&quot;blocked&quot;</span>                            <span class="c1"># Security plugin blocked</span>
+    <span class="n">MODIFIED</span> <span class="o">=</span> <span class="s2">&quot;modified&quot;</span>                          <span class="c1"># Content was modified but allowed through</span>
+    <span class="n">COMPLETED_BY_MIDDLEWARE</span> <span class="o">=</span> <span class="s2">&quot;completed_by_middleware&quot;</span>  <span class="c1"># Middleware completed the request</span>
+    <span class="n">ERROR</span> <span class="o">=</span> <span class="s2">&quot;error&quot;</span>                                <span class="c1"># Critical plugin error occurred</span>
+    <span class="n">NO_SECURITY_EVALUATION</span> <span class="o">=</span> <span class="s2">&quot;no_security&quot;</span>         <span class="c1"># No security plugins evaluated</span>
+</code></pre>
+<h3 id="key-data-structures">Key Data Structures</h3>
+<h4 id="processingpipeline">ProcessingPipeline</h4>
+<p>Contains the complete processing history:</p>
+<ul>
+<li><code>original_content</code>: The original request/response/notification</li>
+<li><code>stages</code>: List of PipelineStage objects (one per plugin)</li>
+<li><code>final_content</code>: The final transformed content (or original if unmodified)</li>
+<li><code>pipeline_outcome</code>: The overall pipeline result</li>
+<li><code>had_security_plugin</code>: Whether any security plugin evaluated the message</li>
+<li><code>capture_content</code>: Whether to capture full content (false after security actions)</li>
+<li><code>blocked_at_stage</code>: Name of plugin that blocked (if any)</li>
+<li><code>completed_by</code>: Name of middleware that completed (if any)</li>
+</ul>
+<h4 id="pipelinestage">PipelineStage</h4>
+<p>Records a single plugin's processing:</p>
+<ul>
+<li><code>plugin_name</code>: Name of the plugin</li>
+<li><code>plugin_type</code>: &quot;security&quot; or &quot;middleware&quot;</li>
+<li><code>result</code>: The PluginResult returned by the plugin</li>
+<li><code>outcome</code>: StageOutcome enum value</li>
+<li><code>error_type</code>: Exception class name (if error occurred)</li>
+<li><code>input_content</code>/<code>output_content</code>: May be cleared for security</li>
+</ul>
+<h2 id="plugin-types">Plugin Types</h2>
+<h3 id="securityplugin">SecurityPlugin</h3>
+<ul>
+<li><strong>MUST</strong> set <code>result.allowed</code> to <code>True</code> or <code>False</code> (never <code>None</code>)</li>
+<li>Default <code>critical = True</code> (fail closed)</li>
+<li>Can modify content via <code>result.modified_content</code></li>
+<li>Sets <code>pipeline.had_security_plugin = True</code></li>
+</ul>
+<h3 id="middlewareplugin">MiddlewarePlugin</h3>
+<ul>
+<li>Can set <code>result.allowed</code> to <code>True</code>, <code>False</code>, or <code>None</code></li>
+<li>Default <code>critical = True</code> (all plugins default to fail-closed)</li>
+<li>Can modify content via <code>result.modified_content</code></li>
+<li>Can complete request via <code>result.completed_response</code></li>
+<li>Does NOT set <code>pipeline.had_security_plugin</code></li>
+</ul>
+<h2 id="processing-pipeline-flow">Processing Pipeline Flow</h2>
+<h3 id="request-processing-flow">Request Processing Flow</h3>
+<ol>
+<li><p><strong>Initialize Pipeline</strong></p>
+<ul>
+<li>Start with <code>PipelineOutcome.NO_SECURITY_EVALUATION</code></li>
+<li>Set <code>capture_content = True</code></li>
+<li>Track <code>had_critical_error = False</code> locally</li>
+</ul>
+</li>
+<li><p><strong>For Each Plugin</strong> (in priority order):</p>
+<p>a. <strong>Execute Plugin</strong></p>
+<pre><code class="language-python"><span class="k">try</span><span class="p">:</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">plugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">(</span><span class="n">request</span><span class="p">,</span> <span class="n">server_name</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># Handle based on criticality (see Critical vs Non-Critical section)</span>
+</code></pre>
+<p>b. <strong>Determine StageOutcome</strong></p>
+<ul>
+<li>If exception thrown → <code>StageOutcome.ERROR</code></li>
+<li>If <code>result.allowed = False</code> → <code>StageOutcome.BLOCKED</code></li>
+<li>If <code>result.completed_response</code> → <code>StageOutcome.COMPLETED_BY_MIDDLEWARE</code></li>
+<li>If <code>result.modified_content</code> → <code>StageOutcome.MODIFIED</code></li>
+<li>Otherwise → <code>StageOutcome.ALLOWED</code></li>
+</ul>
+<p>c. <strong>Update Pipeline State</strong></p>
+<ul>
+<li>If SecurityPlugin and <code>result.allowed = True</code> AND <code>pipeline_outcome == NO_SECURITY_EVALUATION</code>:
+→ Set <code>pipeline_outcome = ALLOWED</code> immediately (but processing continues)</li>
+<li>Track if critical error occurred → Set <code>had_critical_error = True</code> (outcome set later during finalization)</li>
+<li>When <code>add_stage()</code> is called:<ul>
+<li>If <code>StageOutcome.BLOCKED</code> → Sets <code>pipeline_outcome = BLOCKED</code> and <code>blocked_at_stage = plugin_name</code> immediately</li>
+<li>If <code>StageOutcome.COMPLETED_BY_MIDDLEWARE</code> → Sets <code>pipeline_outcome = COMPLETED_BY_MIDDLEWARE</code> and <code>completed_by = plugin_name</code> immediately</li>
+<li>If <code>StageOutcome.ERROR</code> or <code>StageOutcome.MODIFIED</code> → No immediate pipeline outcome change (handled during finalization)</li>
+</ul>
+</li>
+</ul>
+<p>d. <strong>Determine Whether to Continue</strong></p>
+<ul>
+<li>If <code>StageOutcome.BLOCKED</code> → Stop processing</li>
+<li>If <code>StageOutcome.COMPLETED_BY_MIDDLEWARE</code> → Stop processing</li>
+<li>If <code>StageOutcome.ERROR</code> and plugin is critical → Stop processing</li>
+<li>If <code>StageOutcome.ERROR</code> and plugin is non-critical → Continue processing</li>
+<li>Otherwise → Continue to next plugin</li>
+</ul>
+</li>
+<li><p><strong>Finalize Pipeline</strong></p>
+<ul>
+<li>If <code>had_critical_error</code> → Set <code>pipeline_outcome = ERROR</code></li>
+<li>Else if outcome not already final (BLOCKED, COMPLETED_BY_MIDDLEWARE, ERROR):<ul>
+<li>If any stage has <code>StageOutcome.MODIFIED</code> → Set <code>pipeline_outcome = MODIFIED</code></li>
+<li>Else if <code>had_security_plugin</code> → Set <code>pipeline_outcome = ALLOWED</code></li>
+<li>Otherwise leave as <code>NO_SECURITY_EVALUATION</code></li>
+</ul>
+</li>
+<li>Apply content clearing if needed (see Content Clearing Rules)</li>
+</ul>
+</li>
+</ol>
+<h3 id="response-and-notification-processing">Response and Notification Processing</h3>
+<p>Follow the same flow as Request Processing with appropriate method substitutions.</p>
+<h2 id="decision-trees">Decision Trees</h2>
+<h3 id="1-should-processing-continue-after-plugin">1. Should Processing Continue After Plugin?</h3>
+<pre><code class="language-text">Plugin Outcome
+├── BLOCKED → STOP
+├── COMPLETED_BY_MIDDLEWARE → STOP
+├── ERROR
+│   ├── Plugin is critical → STOP
+│   └── Plugin is non-critical → CONTINUE
+├── MODIFIED → CONTINUE
+└── ALLOWED → CONTINUE
+</code></pre>
+<h3 id="2-final-pipeline-outcome-determination">2. Final Pipeline Outcome Determination</h3>
+<pre><code class="language-text">Had Critical Error?
+├── YES → pipeline_outcome = ERROR
+└── NO
+    └── Outcome already final (BLOCKED/COMPLETED_BY_MIDDLEWARE/ERROR)?
+        ├── YES → Keep current outcome
+        └── NO
+            └── Any stage modified content?
+                ├── YES → pipeline_outcome = MODIFIED
+                └── NO
+                    └── Had Security Plugin?
+                        ├── YES → pipeline_outcome = ALLOWED
+                        └── NO → Keep as NO_SECURITY_EVALUATION
+</code></pre>
+<h3 id="3-audit-logging-with-pipeline-outcomes">3. Audit Logging with Pipeline Outcomes</h3>
+<p>Audit plugins receive the raw <code>pipeline_outcome</code> and <code>had_security_plugin</code> values, allowing each formatter to interpret the results according to its specific requirements:</p>
+<ul>
+<li><strong>BLOCKED</strong>: Security plugin explicitly denied the request</li>
+<li><strong>ERROR</strong>: Critical plugin failure (treated as a security block)</li>
+<li><strong>ALLOWED</strong>: Security plugins evaluated and allowed unchanged</li>
+<li><strong>MODIFIED</strong>: Security plugins evaluated and modified content</li>
+<li><strong>COMPLETED_BY_MIDDLEWARE</strong>: Middleware handled the request (check <code>had_security_plugin</code> for security evaluation)</li>
+<li><strong>NO_SECURITY_EVALUATION</strong>: No security plugins were configured or ran</li>
+</ul>
+<p>Each audit formatter can then decide how to represent these outcomes based on its use case (compliance, debugging, alerting, etc.).</p>
+<h3 id="middleware-outcomes">Middleware Outcomes</h3>
+<p>Middleware plugins operate before security plugins and can optimize or filter tool access for operational purposes (not security). They produce specific outcomes:</p>
+<h4 id="completed_by_middleware">COMPLETED_BY_MIDDLEWARE</h4>
+<p>Occurs when middleware provides a complete response, typically when:</p>
+<ul>
+<li>A tool is hidden for context optimization (returns &quot;Tool not available&quot; error)</li>
+<li>A capability is filtered to reduce token usage</li>
+<li>Example: <code>tool_manager</code> in allowlist mode hiding non-allowed tools</li>
+</ul>
+<pre><code class="language-json"><span class="c1">// Request: tools/call for hidden tool</span>
+<span class="c1">// Middleware returns completed response with error</span>
+<span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;jsonrpc&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2.0&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;req-1&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">-32601</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tool &#39;dangerous_tool&#39; is not available&quot;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="c1">// Pipeline outcome: COMPLETED_BY_MIDDLEWARE</span>
+<span class="c1">// Processing stops, security plugins never see the request</span>
+</code></pre>
+<h4 id="modified-middleware-only">MODIFIED (Middleware-only)</h4>
+<p>When only middleware acts and modifies content:</p>
+<ul>
+<li>Filtering tools from tools/list responses</li>
+<li>Removing sensitive resources from listings</li>
+<li>The content continues to security plugins (if any) after modification</li>
+</ul>
+<pre><code class="language-json"><span class="c1">// Original tools/list response has 10 tools</span>
+<span class="c1">// Middleware filters to 3 allowed tools</span>
+<span class="c1">// Pipeline outcome: MODIFIED (if no security plugins)</span>
+<span class="c1">// Or further evaluated by security plugins</span>
+</code></pre>
+<h4 id="no_security_evaluation">NO_SECURITY_EVALUATION</h4>
+<p>This outcome currently serves dual purposes:</p>
+<ol>
+<li>No security plugins were configured or ran</li>
+<li><strong>No middleware made changes</strong> (pass-through)</li>
+</ol>
+<p>When middleware plugins are present but don't modify/complete:</p>
+<ul>
+<li>Request doesn't match middleware criteria</li>
+<li>Pipeline outcome remains NO_SECURITY_EVALUATION</li>
+</ul>
+<p><strong>Note</strong>: There is no separate <code>NO_MIDDLEWARE_EVALUATION</code> outcome. The <code>NO_SECURITY_EVALUATION</code> outcome indicates no security evaluation occurred, regardless of whether middleware was present.</p>
+<h3 id="audit-record-examples-for-middleware">Audit Record Examples for Middleware</h3>
+<p>When middleware completes a request (e.g., hiding a tool), audit plugins capture the full context:</p>
+<h4 id="json-lines-format">JSON Lines Format</h4>
+<pre><code class="language-json"><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2024-01-15T10:30:45.123Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;event_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;REQUEST&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;direction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;request&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;server_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;filesystem&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;method&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;tools/call&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;req-123&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;delete_all&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;arguments&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;pipeline_outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;completed_by_middleware&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;completed_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ToolManagerPlugin&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;had_security_plugin&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;pipeline&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;completed_by_middleware&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;total_time_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.45</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;stages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;plugin&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ToolManagerPlugin&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;plugin_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;middleware&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;outcome&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;completed_by_middleware&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;time_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.35</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tool not in allowlist&quot;</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;blocked&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tool &#39;delete_all&#39; is not available&quot;</span>
+<span class="p">}</span>
+</code></pre>
+<h4 id="human-readable-line-format">Human-Readable Line Format</h4>
+<pre><code class="language-text"><span class="mf">2024</span><span class="o">-</span><span class="mf">01</span><span class="o">-</span><span class="mf">15</span><span class="w"> </span><span class="mf">10</span><span class="p">:</span><span class="mf">30</span><span class="p">:</span><span class="mf">45</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="n">REQUEST</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="n">filesystem</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="kr">to</span><span class="n">ols</span><span class="o">/</span><span class="n">call</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="n">req</span><span class="o">-</span><span class="mf">123</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="n">COMPLETED_BY_MIDDLEWARE</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="kr">To</span><span class="n">olManagerPlugin</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="kr">To</span><span class="n">ol</span><span class="w"> </span><span class="err">&#39;</span><span class="n">delete_all</span><span class="err">&#39;</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="n">available</span><span class="w"> </span><span class="p">(</span><span class="n">hidden</span><span class="w"> </span><span class="n">by</span><span class="w"> </span><span class="n">middleware</span><span class="p">)</span>
+</code></pre>
+<p>Key differences from security blocks:</p>
+<ul>
+<li><code>pipeline_outcome</code>: <code>&quot;completed_by_middleware&quot;</code> (not <code>&quot;blocked&quot;</code>)</li>
+<li><code>completed_by</code>: Shows which middleware plugin handled it</li>
+<li><code>status</code>: Still shows <code>&quot;blocked&quot;</code> for backward compatibility with monitoring</li>
+<li><code>message</code>: User-friendly error message (not security-generic)</li>
+<li>Processing stops before security evaluation</li>
+</ul>
+<h2 id="content-clearing-rules">Content Clearing Rules</h2>
+<h3 id="when-content-gets-cleared">When Content Gets Cleared</h3>
+<p>Content (<code>input_content</code>, <code>output_content</code>) and reasons are cleared from pipeline stages when:</p>
+<ol>
+<li><p><strong>During Processing</strong>: <code>capture_content</code> is set to <code>False</code> when:</p>
+<ul>
+<li>Any SecurityPlugin returns <code>allowed = False</code> (blocked)</li>
+<li>Any SecurityPlugin returns <code>modified_content</code> (redacted/modified)</li>
+</ul>
+</li>
+<li><p><strong>After Processing</strong>: If <code>capture_content = False</code>:</p>
+<ul>
+<li>All stage <code>input_content</code> → <code>None</code></li>
+<li>All stage <code>output_content</code> → <code>None</code></li>
+<li>All stage reasons → Generic like <code>&quot;[allowed]&quot;</code>, <code>&quot;[blocked]&quot;</code>, <code>&quot;[error]&quot;</code></li>
+<li>Content hashes are KEPT for lineage tracking</li>
+</ul>
+</li>
+</ol>
+<h3 id="security-rationale">Security Rationale</h3>
+<p>This prevents sensitive data (that triggered blocks or was redacted) from appearing in logs.</p>
+<h2 id="critical-vs-non-critical-plugin-handling">Critical vs Non-Critical Plugin Handling</h2>
+<h3 id="plugin-criticality-defaults">Plugin Criticality Defaults</h3>
+<ul>
+<li><strong>All plugins</strong> default to <code>critical = True</code> (fail closed)</li>
+<li>Set <code>critical: false</code> explicitly to allow fail-open behavior for specific plugins</li>
+</ul>
+<h3 id="exception-handling-based-on-criticality">Exception Handling Based on Criticality</h3>
+<p>When a plugin throws an exception:</p>
+<pre><code class="language-python"><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="n">outcome</span> <span class="o">=</span> <span class="n">StageOutcome</span><span class="o">.</span><span class="n">ERROR</span>
+    <span class="k">if</span> <span class="n">plugin</span><span class="o">.</span><span class="n">is_critical</span><span class="p">():</span>
+        <span class="n">had_critical_error</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="c1"># Log as error</span>
+        <span class="c1"># Stop processing after this stage</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># Log as warning  </span>
+        <span class="c1"># Continue processing to next plugin</span>
+</code></pre>
+<p><strong>Important</strong>: Criticality ONLY affects exception handling. It does NOT affect security decisions (<code>allowed = False</code> always stops processing regardless of criticality).</p>
+<h2 id="reason-handling">Reason Handling</h2>
+<h3 id="individual-plugin-reasons">Individual Plugin Reasons</h3>
+<p>Each plugin can provide a custom reason in its <code>PluginResult</code>. These are preserved in each <code>PipelineStage.result.reason</code>.</p>
+<h3 id="pipeline-level-reason-for-audit-logging">Pipeline-Level Reason (for audit logging)</h3>
+<p>As of v0.1.0, all plugin reasons are concatenated with <code>|</code> separator in the <code>BaseAuditingPlugin._combine_pipeline_reasons()</code> method, with each reason prefixed by the plugin name in brackets:</p>
+<pre><code class="language-python"><span class="c1"># In BaseAuditingPlugin class</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_combine_pipeline_reasons</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">,</span> <span class="n">modified_stage</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="s1">&#39;PipelineStage&#39;</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Combine reasons from all pipeline stages into a single string for logging.&quot;&quot;&quot;</span>
+    <span class="c1"># Collect all non-empty reasons from pipeline stages in execution order</span>
+    <span class="n">reasons</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">stage</span> <span class="ow">in</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">stages</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">stage</span><span class="o">.</span><span class="n">result</span> <span class="ow">and</span> <span class="n">stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="p">:</span>
+            <span class="c1"># Include plugin name with each reason for better traceability</span>
+            <span class="n">reason_with_plugin</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">plugin_name</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">reason_with_plugin</span><span class="p">)</span>
+    
+    <span class="c1"># If we have plugin reasons, concatenate them with pipe separator</span>
+    <span class="k">if</span> <span class="n">reasons</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot; | &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">reasons</span><span class="p">)</span>
+    
+    <span class="c1"># Fallback to generic pipeline outcome if no plugin reasons available</span>
+    <span class="k">return</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">pipeline_outcome</span><span class="o">.</span><span class="n">value</span>
+</code></pre>
+<p><strong>Example</strong>: <code>&quot;[Tool Manager] Tool 'read_file' is in allowlist | [Basic PII Filter] No PII detected | [Basic Secrets Filter] No secrets detected&quot;</code></p>
+<h3 id="reason-clearing">Reason Clearing</h3>
+<p>When <code>capture_content = False</code>, reasons are replaced with generic values (still prefixed with plugin name):</p>
+<ul>
+<li><code>&quot;[plugin_name] [allowed]&quot;</code> for ALLOWED stages</li>
+<li><code>&quot;[plugin_name] [blocked]&quot;</code> for BLOCKED stages</li>
+<li><code>&quot;[plugin_name] [error]&quot;</code> for ERROR stages</li>
+<li><code>&quot;[plugin_name] [modified]&quot;</code> for MODIFIED stages</li>
+</ul>
+<hr />
+<h3 id="edge-cases-and-special-behaviors">Edge Cases and Special Behaviors</h3>
+<h4 id="edge-case-1-plugin-contract-violations">Edge Case 1: Plugin Contract Violations</h4>
+<p>The system enforces strict contracts for each plugin type:</p>
+<p><strong>MiddlewarePlugin Setting <code>allowed</code> (Contract Violation)</strong>:</p>
+<ul>
+<li>When a MiddlewarePlugin sets <code>allowed</code> to any non-None value</li>
+<li>Raises <code>ValueError</code>: &quot;Middleware plugin {name} illegally set allowed={value}&quot;</li>
+<li>The exception is caught and creates <code>StageOutcome.ERROR</code></li>
+<li>Processing stops if the plugin is critical (follows normal error handling)</li>
+<li><strong>Result</strong>: MiddlewarePlugin cannot make security decisions - attempting to do so is an error</li>
+</ul>
+<p><strong>SecurityPlugin Not Setting <code>allowed</code> (Contract Violation)</strong>:</p>
+<ul>
+<li>When a SecurityPlugin returns <code>allowed=None</code></li>
+<li>Raises <code>ValueError</code>: &quot;Security plugin {name} failed to make a security decision&quot;</li>
+<li>The exception is caught and creates <code>StageOutcome.ERROR</code></li>
+<li>Processing stops if the plugin is critical (default for SecurityPlugin)</li>
+<li><strong>Result</strong>: SecurityPlugin MUST make explicit security decisions</li>
+</ul>
+<p><strong>Design Principle</strong>: Only SecurityPlugin instances can make security decisions. MiddlewarePlugin instances that need to block requests must be implemented as SecurityPlugin subclasses.</p>
+<h4 id="edge-case-2-multiple-security-plugin-outcomes">Edge Case 2: Multiple Security Plugin Outcomes</h4>
+<p>When multiple security plugins evaluate a message, the pipeline outcome follows these rules:</p>
+<ol>
+<li><strong>First <code>allowed=False</code> wins</strong>: Processing stops immediately at the first security plugin that blocks</li>
+<li><strong>All must allow</strong>: For the message to proceed, ALL security plugins must return <code>allowed=True</code></li>
+<li><strong>Modification doesn't stop processing</strong>: If a security plugin modifies content but returns <code>allowed=True</code>, processing continues with the modified content</li>
+<li><strong>Pipeline outcome priority</strong>: <code>BLOCKED</code> &gt; <code>ALLOWED</code> &gt; <code>NO_SECURITY_EVALUATION</code></li>
+</ol>
+<h4 id="edge-case-3-pipeline-outcome-timing-immediate-vs-deferred">Edge Case 3: Pipeline Outcome Timing (Immediate vs Deferred)</h4>
+<p>Pipeline outcomes are set at different times based on their impact on processing flow:</p>
+<p><strong>Immediate Outcomes</strong> (set as soon as they occur):</p>
+<ol>
+<li><strong><code>BLOCKED</code></strong> - Set by <code>add_stage()</code> when any security plugin blocks (stops processing immediately)</li>
+<li><strong><code>COMPLETED_BY_MIDDLEWARE</code></strong> - Set by <code>add_stage()</code> when middleware completes response (stops processing immediately)</li>
+<li><strong><code>ALLOWED</code></strong> - Set when first security plugin allows AND outcome is still <code>NO_SECURITY_EVALUATION</code> (processing continues but outcome is locked in)</li>
+</ol>
+<p><strong>Deferred Outcomes</strong> (set during finalization):
+4. <strong><code>ERROR</code></strong> - Set during finalization if <code>had_critical_error</code> flag is true</p>
+<ul>
+<li>Why deferred: Non-critical errors allow processing to continue, so we need the full context to know if any critical error occurred</li>
+</ul>
+<ol start="5">
+<li><strong><code>MODIFIED</code></strong> - Set during finalization if any stage has <code>StageOutcome.MODIFIED</code><ul>
+<li>Why deferred: Lower priority than BLOCKED/COMPLETED/ERROR, so we wait to see if a higher-priority outcome occurs</li>
+</ul>
+</li>
+<li><strong><code>NO_SECURITY_EVALUATION</code></strong> - Remains if no security plugins ran and no other outcome was set</li>
+</ol>
+<p>The finalization logic checks outcomes in priority order: ERROR &gt; BLOCKED/COMPLETED (already set) &gt; MODIFIED &gt; ALLOWED (already set) &gt; NO_SECURITY_EVALUATION</p>
+<p><strong>Important</strong>: Once set to <code>BLOCKED</code> or <code>COMPLETED_BY_MIDDLEWARE</code>, the outcome doesn't change (processing stops). <code>MODIFIED</code> is set during finalization and takes precedence over <code>ALLOWED</code>.</p>
+<h4 id="edge-case-4-content-clearing-triggers">Edge Case 4: Content Clearing Triggers</h4>
+<p>Content gets cleared (<code>capture_content = False</code>) when:</p>
+<ol>
+<li><strong>Security block</strong>: Any SecurityPlugin returns <code>allowed=False</code></li>
+<li><strong>Security modification</strong>: Any SecurityPlugin returns <code>modified_content</code></li>
+<li><strong>NOT for middleware modifications</strong>: Middleware modifications don't trigger content clearing</li>
+</ol>
+<p>This is a security feature - any security action (block or redact) triggers clearing to prevent sensitive data from appearing in logs.</p>
+<hr />
+<h3 id="no_security_evaluation-behavior">NO_SECURITY_EVALUATION Behavior</h3>
+<p>When the final pipeline outcome is <code>NO_SECURITY_EVALUATION</code>:</p>
+<ul>
+<li><strong>The message is allowed to proceed</strong> (not blocked)</li>
+<li><strong>Audit logs show no security evaluation occurred</strong> via the outcome value</li>
+<li><strong>Rationale</strong>: Users may be working with dev data or debugging middleware without needing security enforcement</li>
+</ul>
+<p>This is intentional - the proxy does not block by default when no security plugins are configured.</p>
+<h2 id="example-scenarios">Example Scenarios</h2>
+<h3 id="scenario-1-single-security-plugin-allowed">Scenario 1: Single Security Plugin - Allowed</h3>
+<p><strong>Setup</strong>: One security plugin (Tool Manager) evaluates a request</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution</span>
+<span class="n">ToolManagerPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Tool &#39;read_file&#39; is in allowlist&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = ALLOWED</code></li>
+<li><code>had_security_plugin = True</code></li>
+<li><code>capture_content = True</code> (no security action taken)</li>
+<li>Pipeline reason: <code>&quot;[Tool Manager] Tool 'read_file' is in allowlist&quot;</code></li>
+<li>Content is fully captured in stages</li>
+</ul>
+<h3 id="scenario-2-single-security-plugin-blocked">Scenario 2: Single Security Plugin - Blocked</h3>
+<p><strong>Setup</strong>: One security plugin blocks a request</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution</span>
+<span class="n">ToolManagerPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Tool &#39;dangerous_tool&#39; not in allowlist&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = BLOCKED</code></li>
+<li><code>had_security_plugin = True</code></li>
+<li><code>capture_content = False</code> (security block occurred)</li>
+<li><code>blocked_at_stage = &quot;Tool Manager&quot;</code></li>
+<li>Processing stops immediately</li>
+<li>Content cleared from stages, reasons become <code>&quot;[Tool Manager] [blocked]&quot;</code></li>
+<li>Pipeline reason (after clearing): <code>&quot;[Tool Manager] [blocked]&quot;</code></li>
+</ul>
+<h3 id="scenario-3-multiple-security-plugins-mixed-decisions">Scenario 3: Multiple Security Plugins - Mixed Decisions</h3>
+<p><strong>Setup</strong>: Three security plugins evaluate in sequence</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution order</span>
+<span class="mf">1.</span> <span class="n">ToolManagerPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Tool &#39;read_file&#39; is in allowlist&quot;</span><span class="p">)</span>
+<span class="mf">2.</span> <span class="n">BasicPIIFilterPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">modified_content</span><span class="o">=...</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;PII detected and redacted: email&quot;</span><span class="p">)</span>
+<span class="mf">3.</span> <span class="n">BasicSecretsFilterPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;No secrets detected&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = MODIFIED</code> (content was modified)</li>
+<li><code>had_security_plugin = True</code></li>
+<li><code>capture_content = False</code> (PII was modified - security action)</li>
+<li>All content cleared from stages</li>
+<li>All reasons become generic: <code>&quot;[Tool Manager] [allowed]&quot;</code>, <code>&quot;[Basic PII Filter] [modified]&quot;</code>, <code>&quot;[Basic Secrets Filter] [allowed]&quot;</code></li>
+<li>Pipeline reason (concatenated after clearing): <code>&quot;[Tool Manager] [allowed] | [Basic PII Filter] [modified] | [Basic Secrets Filter] [allowed]&quot;</code></li>
+</ul>
+<h3 id="scenario-4-critical-plugin-error">Scenario 4: Critical Plugin Error</h3>
+<p><strong>Setup</strong>: A critical security plugin throws an exception</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution</span>
+<span class="n">CriticalSecurityPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">throws</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Database connection failed&quot;</span><span class="p">)</span>
+<span class="c1"># Plugin has critical=True (default for SecurityPlugin)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = ERROR</code></li>
+<li><code>had_security_plugin = True</code></li>
+<li><code>had_critical_error = True</code></li>
+<li>Processing stops immediately</li>
+<li>Stage created with <code>outcome = ERROR</code>, <code>error_type = &quot;Exception&quot;</code></li>
+<li>Pipeline reason: <code>&quot;[CriticalSecurityPlugin] Database connection failed&quot;</code></li>
+</ul>
+<h3 id="scenario-5-non-critical-plugin-error-continues">Scenario 5: Non-Critical Plugin Error Continues</h3>
+<p><strong>Setup</strong>: A non-critical plugin fails, then a critical plugin succeeds</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution order</span>
+<span class="mf">1.</span> <span class="n">NonCriticalMonitoringPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">throws</span> <span class="ne">Exception</span><span class="p">(</span><span class="s2">&quot;Metrics service unavailable&quot;</span><span class="p">)</span>
+   <span class="c1"># Plugin has critical=False</span>
+<span class="mf">2.</span> <span class="n">CriticalSecurityPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Request authorized&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = ALLOWED</code> (not ERROR because non-critical)</li>
+<li><code>had_security_plugin = True</code></li>
+<li>Two stages created:<ul>
+<li>Stage 1: <code>outcome = ERROR</code>, plugin continues</li>
+<li>Stage 2: <code>outcome = ALLOWED</code></li>
+</ul>
+</li>
+<li>Pipeline reason: <code>&quot;[NonCriticalMonitoringPlugin] Metrics service unavailable | [CriticalSecurityPlugin] Request authorized&quot;</code></li>
+<li>Warning logged for non-critical failure, processing continued</li>
+</ul>
+<h3 id="scenario-6-middleware-completion">Scenario 6: Middleware Completion</h3>
+<p><strong>Setup</strong>: Middleware provides a complete response</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution order</span>
+<span class="mf">1.</span> <span class="n">SecurityPlugin</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Allowed&quot;</span><span class="p">)</span>
+<span class="mf">2.</span> <span class="n">CacheMiddleware</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span>
+       <span class="n">allowed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+       <span class="n">completed_response</span><span class="o">=</span><span class="n">MCPResponse</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>
+       <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Served from cache&quot;</span>
+   <span class="p">)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = COMPLETED_BY_MIDDLEWARE</code></li>
+<li><code>had_security_plugin = True</code> (security evaluated before completion)</li>
+<li><code>completed_by = &quot;CacheMiddleware&quot;</code></li>
+<li>Processing stops after CacheMiddleware</li>
+<li><code>final_content = completed_response</code></li>
+<li>Pipeline reason: <code>&quot;[SecurityPlugin] Allowed | [CacheMiddleware] Served from cache&quot;</code></li>
+</ul>
+<h3 id="scenario-7-no-security-plugins">Scenario 7: No Security Plugins</h3>
+<p><strong>Setup</strong>: Only middleware plugins configured</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution order</span>
+<span class="mf">1.</span> <span class="n">LoggingMiddleware</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Request logged&quot;</span><span class="p">)</span>
+<span class="mf">2.</span> <span class="n">MetricsMiddleware</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Metrics recorded&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = NO_SECURITY_EVALUATION</code></li>
+<li><code>had_security_plugin = False</code> (no security decision made)</li>
+<li>Request proceeds to upstream</li>
+<li>Pipeline reason: <code>&quot;[LoggingMiddleware] Request logged | [MetricsMiddleware] Metrics recorded&quot;</code></li>
+<li>Content fully captured (no security actions)</li>
+</ul>
+<h3 id="scenario-8-security-plugin-modifies-content">Scenario 8: Security Plugin Modifies Content</h3>
+<p><strong>Setup</strong>: Security plugin redacts sensitive data</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution</span>
+<span class="n">BasicSecretsFilterPlugin</span><span class="o">.</span><span class="n">process_response</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span>
+    <span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">modified_content</span><span class="o">=</span><span class="n">MCPResponse</span><span class="p">(</span><span class="o">...</span><span class="p">),</span>  <span class="c1"># with secrets redacted</span>
+    <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;3 secrets redacted&quot;</span>
+<span class="p">)</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>pipeline_outcome = MODIFIED</code> (content was modified)</li>
+<li><code>had_security_plugin = True</code></li>
+<li><code>capture_content = False</code> (security modification occurred)</li>
+<li>Content cleared from all stages</li>
+<li>Reason becomes generic: <code>&quot;[Basic Secrets Filter] [modified]&quot;</code></li>
+<li><code>final_content</code> contains the redacted version</li>
+</ul>
+<h3 id="scenario-9-middleware-sets-allowedfalse-contract-violation">Scenario 9: Middleware Sets allowed=False (Contract Violation)</h3>
+<p><strong>Setup</strong>: A middleware plugin incorrectly tries to make a security decision</p>
+<pre><code class="language-python"><span class="c1"># Plugin execution</span>
+<span class="n">LoggingMiddleware</span><span class="o">.</span><span class="n">process_request</span><span class="p">()</span> <span class="err">→</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Suspicious activity&quot;</span><span class="p">)</span>
+<span class="c1"># Note: LoggingMiddleware extends MiddlewarePlugin, not SecurityPlugin</span>
+<span class="c1"># This raises ValueError during contract enforcement</span>
+</code></pre>
+<p><strong>Pipeline Result</strong>:</p>
+<ul>
+<li><code>ValueError</code> raised: &quot;Middleware plugin LoggingMiddleware illegally set allowed=False&quot;</li>
+<li>Exception caught, creates <code>StageOutcome.ERROR</code></li>
+<li>If middleware is critical → <code>pipeline_outcome = ERROR</code>, processing stops</li>
+<li>If middleware is non-critical → Warning logged, processing continues</li>
+<li>Stage created with <code>outcome = ERROR</code>, <code>error_type = &quot;ValueError&quot;</code></li>
+<li>Pipeline reason includes error: <code>&quot;[LoggingMiddleware] Middleware plugin LoggingMiddleware illegally set allowed=False&quot;</code></li>
+</ul>
+<p><strong>Key Point</strong>: Contract violations are errors. Middleware plugins attempting to make security decisions indicates incorrect plugin type usage.</p>
+<hr />
+<h2 id="summary">Summary</h2>
+<h3 id="key-takeaways">Key Takeaways</h3>
+<ol>
+<li><strong>Security Plugins are Special</strong>: Only SecurityPlugin subclasses can make security decisions that block messages</li>
+<li><strong>Pipeline Outcomes are Final</strong>: BLOCKED and COMPLETED_BY_MIDDLEWARE stop processing immediately</li>
+<li><strong>Content Clearing is Security-Driven</strong>: Only security actions (block/modify) trigger content clearing</li>
+<li><strong>Criticality Affects Errors Only</strong>: Critical vs non-critical only matters for exception handling, not for security decisions</li>
+<li><strong>NO_SECURITY_EVALUATION is Permissive</strong>: Messages pass through when no security plugins are configured</li>
+<li><strong>Reasons are Concatenated</strong>: All plugin reasons are joined with <code>|</code> for audit logging</li>
+<li><strong>Contract Violations are Errors</strong>: Both plugin types must follow their contracts or face exceptions</li>
+</ol>
+<h3 id="implementation-notes">Implementation Notes</h3>
+<p>This document reflects the actual behavior as of Gatekit v0.1.0. The implementation is in:</p>
+<ul>
+<li><code>/gatekit/plugins/manager.py</code>: Main pipeline processing logic</li>
+<li><code>/gatekit/plugins/interfaces.py</code>: Plugin base classes and enum definitions (StageOutcome, PipelineOutcome)</li>
+<li><code>/gatekit/plugins/auditing/base.py</code>: Reason extraction and audit logging</li>
+</ul>
+<hr />
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

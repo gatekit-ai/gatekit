@@ -1,0 +1,15 @@
+handler: tool_manager
+category: middleware
+description: >-
+  Allowlist two tools and rename one of them so the UI exercise covers the
+  dropdown and string fields from the shared schema fragment.
+config:
+  enabled: true
+  critical: true
+  priority: 25
+  tools:
+    - tool: read_file
+      display_name: SafeRead
+      display_description: Read-only helper for audit-approved paths.
+    - tool: search_docs
+      display_name: DocSearch

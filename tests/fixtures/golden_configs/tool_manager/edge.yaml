@@ -1,0 +1,18 @@
+handler: tool_manager
+category: middleware
+description: >-
+  Stress config that mixes long descriptions, renames, and preserves an original
+  tool to catch ordering bugs in adapters.
+config:
+  enabled: true
+  critical: true
+  priority: 5
+  tools:
+    - tool: summarize
+      display_name: UltraSummarize
+      display_description: |
+        Tight summary tuned for legal review. Keeps paragraphs short and
+        enforces inline citations.
+    - tool: classify
+      display_description: Returns JSON payload with category + risk rating.
+    - tool: translate

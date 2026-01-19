@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Architecture Decision Records - Gatekit Documentation</title>
+  <meta name="description" content="Architectural decisions made during Gatekit development">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/" class="active">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1>Architecture Decision Records</h1>
+<p>This section documents significant architectural decisions made during Gatekit development. Each ADR captures the context, decision, and consequences of a particular choice.</p>
+<table class="adr-table">
+<thead><tr><th>ID</th><th>Title</th></tr></thead>
+<tbody>
+<tr><td>001</td><td><a href="001-transport-layer-architecture.html">ADR-001: Transport Layer Architecture</a></td></tr>
+<tr><td>002</td><td><a href="002-async-first-architecture.html">ADR-002: Async-First Architecture</a></td></tr>
+<tr><td>003</td><td><a href="003-test-driven-development.html">ADR-003: Test-Driven Development Approach</a></td></tr>
+<tr><td>004</td><td><a href="004-error-handling-strategy.html">ADR-004: Error Handling Strategy</a></td></tr>
+<tr><td>005</td><td><a href="005-configuration-management.html">ADR-005: Configuration Management Design</a></td></tr>
+<tr><td>006</td><td><a href="006-critical-auditing-plugin-failure-modes.html">ADR-006: Critical Plugin Failure Modes (All Plugin Types)</a></td></tr>
+<tr><td>007</td><td><a href="007-plugin-configuration-structure.html">ADR-007: Plugin Configuration Structure</a></td></tr>
+<tr><td>008</td><td><a href="008-plugin-response-modification-interface.html">ADR-008: Plugin Content Modification Interface</a></td></tr>
+<tr><td>009</td><td><a href="009-sequential-plugin-processing-responses.html">ADR-009: Sequential Plugin Processing for Responses</a></td></tr>
+<tr><td>010</td><td><a href="010-tools-list-response-filtering-security.html">ADR-010: Tools/List Response Filtering</a></td></tr>
+<tr><td>011</td><td><a href="011-response-filtering-fail-closed-strategy.html">ADR-011: Response Filtering Exception Handling - Fail-Closed Strategy</a></td></tr>
+<tr><td>012</td><td><a href="012-configuration-path-resolution-strategy.html">ADR-012: Configuration Path Resolution Strategy</a></td></tr>
+<tr><td>013</td><td><a href="013-concurrent-request-handling.html">ADR-013: Concurrent Request Handling Implementation</a></td></tr>
+<tr><td>014</td><td><a href="014-multi-server-support.html">ADR-014: Multi-Server Support Architecture</a></td></tr>
+<tr><td>015</td><td><a href="015-proxy-capability-discovery.html">ADR-015: Proxy-Based Capability Discovery</a></td></tr>
+<tr><td>016</td><td><a href="016-audit-log-content-clearing.html">ADR-016: Audit Log Content Clearing</a></td></tr>
+<tr><td>017</td><td><a href="017-tui-invocation-pattern.html">ADR-017: TUI Invocation Pattern</a></td></tr>
+<tr><td>018</td><td><a href="018-plugin-ui-widget-architecture.html">ADR-018: Plugin UI Widget Architecture</a></td></tr>
+<tr><td>019</td><td><a href="019-plugin-equality-principle.html">ADR-019: Plugin Equality Principle</a></td></tr>
+<tr><td>020</td><td><a href="020-middleware-plugins-architecture.html">ADR-020: Middleware Plugin Architecture with Request Completion Capability</a></td></tr>
+<tr><td>021</td><td><a href="021-handler-nomenclature.html">ADR-021: Handler Nomenclature for Plugin Manifest Declarations</a></td></tr>
+<tr><td>022</td><td><a href="022-unified-plugin-result.html">ADR-022: Unified PluginResult for Plugin Processing</a></td></tr>
+<tr><td>023</td><td><a href="023-pipeline-reason-concatenation.html">ADR-023: Pipeline Reason Concatenation for Audit Logging</a></td></tr>
+<tr><td>024</td><td><a href="024-security-plugin-detection-defaults.html">ADR-024: Security Plugin Detection Option Defaults</a></td></tr>
+<tr><td>025</td><td><a href="025-base64-detection-forced-blocking.html">ADR-025: Base64 Detection Forced Blocking</a></td></tr>
+</tbody>
+</table>
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,13 @@
+handler: audit_csv
+category: auditing
+description: Edge case using semicolon delimiter with no quoting.
+config:
+  enabled: true
+  critical: true
+  output_file: logs/audit-semicolon.csv
+  csv_config:
+    delimiter: ";"
+    quote_char: "'"
+    quote_style: none
+    escape_char: "\\"
+    null_value: ''

@@ -1,0 +1,7 @@
+handler: audit_human_readable
+category: auditing
+description: Simple line logging with default settings.
+config:
+  enabled: true
+  critical: true
+  output_file: logs/audit.log

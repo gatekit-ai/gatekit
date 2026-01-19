@@ -1,0 +1,16 @@
+handler: basic_prompt_injection_defense
+category: security
+description: Strict audit-only mode enabling every detection method.
+config:
+  enabled: true
+  critical: true
+  priority: 0
+  action: audit_only
+  sensitivity: strict
+  detection_methods:
+    delimiter_injection:
+      enabled: true
+    role_manipulation:
+      enabled: true
+    context_hijacking:
+      enabled: true

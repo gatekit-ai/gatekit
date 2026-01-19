@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-016: Audit Log Content Clearing - Gatekit Documentation</title>
+  <meta name="description" content="Accepted">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-016-audit-log-content-clearing">ADR-016: Audit Log Content Clearing</h1>
+<h2 id="status">Status</h2>
+<p>Accepted</p>
+<h2 id="context">Context</h2>
+<p>Gatekit's audit logging captures MCP traffic for debugging, compliance, and forensic analysis. When security plugins detect sensitive content (PII, secrets, prompt injection attempts), they block or redact it. A decision is needed about what appears in audit logs when this happens.</p>
+<p>The challenge: audit logs need to provide visibility into what happened, but logging the sensitive content that triggered a security action defeats the purpose of the security plugin.</p>
+<h2 id="decision">Decision</h2>
+<p>When any security plugin blocks or modifies content, Gatekit clears the actual content from all pipeline stages before audit logging. Only metadata is preserved.</p>
+<h3 id="what-gets-cleared">What Gets Cleared</h3>
+<ul>
+<li><code>input_content</code> and <code>output_content</code> for all pipeline stages → <code>None</code></li>
+<li>Plugin reasons → Generic placeholders (<code>[allowed]</code>, <code>[blocked]</code>, <code>[modified]</code>, <code>[error]</code>)</li>
+</ul>
+<h3 id="what-gets-preserved">What Gets Preserved</h3>
+<ul>
+<li>Pipeline outcome (BLOCKED, MODIFIED, ALLOWED, etc.)</li>
+<li>Which plugin took action (<code>blocked_at_stage</code>, <code>completed_by</code>)</li>
+<li>Processing timestamps and durations</li>
+<li>Content hashes (for lineage tracking without exposing content)</li>
+<li>Plugin names and execution order</li>
+</ul>
+<h3 id="trigger-conditions">Trigger Conditions</h3>
+<p>Content clearing is triggered when any SecurityPlugin:</p>
+<ul>
+<li>Returns <code>allowed = False</code> (blocked the request)</li>
+<li>Returns <code>modified_content</code> (redacted or transformed the content)</li>
+</ul>
+<p>Middleware modifications do NOT trigger content clearing—only security plugin actions.</p>
+<h2 id="options-considered">Options Considered</h2>
+<h3 id="1-log-everything">1. Log Everything ❌</h3>
+<p>Log full content regardless of security decisions.</p>
+<p><strong>Problems:</strong></p>
+<ul>
+<li>Sensitive data that triggered blocks ends up in logs</li>
+<li>Enables log replay attacks—attacker exfiltrates logs to extract secrets/PII</li>
+<li>Defeats the purpose of security plugins</li>
+</ul>
+<h3 id="2-log-nothing-when-security-acts">2. Log Nothing When Security Acts ❌</h3>
+<p>Clear all audit data when security plugins act.</p>
+<p><strong>Problems:</strong></p>
+<ul>
+<li>Loses visibility into security events</li>
+<li>Cannot detect attack patterns or tune security rules</li>
+<li>Compliance requirements often mandate security event logging</li>
+</ul>
+<h3 id="3-encrypt-sensitive-content">3. Encrypt Sensitive Content ❌</h3>
+<p>Encrypt flagged content in logs with a separate key.</p>
+<p><strong>Problems:</strong></p>
+<ul>
+<li>Key management complexity</li>
+<li>Encrypted content is still exfiltratable</li>
+<li>Doesn't address the fundamental question of whether to retain the data</li>
+</ul>
+<h3 id="4-user-configurable-retention">4. User-Configurable Retention ❌</h3>
+<p>Let users choose what to log via configuration.</p>
+<p><strong>Problems:</strong></p>
+<ul>
+<li>Easy to misconfigure</li>
+<li>Default matters—wrong default causes breaches</li>
+<li>Complexity for marginal benefit</li>
+</ul>
+<h3 id="5-metadata-only-logging">5. Metadata-Only Logging ✅</h3>
+<p>Clear content but preserve metadata about what happened.</p>
+<p><strong>Benefits:</strong></p>
+<ul>
+<li>Security events are visible (who, when, which plugin, what outcome)</li>
+<li>Sensitive content never reaches logs</li>
+<li>Content hashes enable lineage tracking without exposure</li>
+<li>Simple, secure default with no configuration needed</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="benefits">Benefits</h3>
+<ol>
+<li><p><strong>Log replay attacks mitigated</strong>: Audit logs don't contain the sensitive data that triggered security actions. An attacker with log access cannot extract secrets or PII.</p>
+</li>
+<li><p><strong>Security visibility preserved</strong>: Operators can see that security events occurred, which plugins acted, and the outcomes—without seeing the sensitive content.</p>
+</li>
+<li><p><strong>Compliance-friendly</strong>: Logs demonstrate security controls are active without creating a secondary exposure vector.</p>
+</li>
+<li><p><strong>Simple mental model</strong>: Security action → content cleared. No configuration or decision-making required.</p>
+</li>
+</ol>
+<h3 id="trade-offs">Trade-offs</h3>
+<ol>
+<li><p><strong>Reduced forensic detail</strong>: When investigating a blocked request, operators see that it was blocked but not exactly what triggered it. This is intentional—if the content was sensitive enough to block, it shouldn't be in logs.</p>
+</li>
+<li><p><strong>Reason messages cleared</strong>: Plugin reasons are replaced with generic placeholders. Detailed reasons might leak information about what was detected.</p>
+</li>
+<li><p><strong>All-or-nothing</strong>: If any security plugin acts, all content is cleared—including from plugins that allowed the request. This prevents partial leakage through other stages.</p>
+</li>
+</ol>
+<h2 id="implementation">Implementation</h2>
+<p>Content clearing is implemented in the ProcessingPipeline class:</p>
+<pre><code class="language-python"><span class="c1"># In ProcessingPipeline</span>
+<span class="n">capture_content</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>  <span class="c1"># Set to False when security acts</span>
+
+<span class="c1"># Triggers (in plugin manager)</span>
+<span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">plugin</span><span class="p">,</span> <span class="n">SecurityPlugin</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">allowed</span> <span class="o">==</span> <span class="kc">False</span> <span class="ow">or</span> <span class="n">result</span><span class="o">.</span><span class="n">modified_content</span><span class="p">:</span>
+        <span class="n">pipeline</span><span class="o">.</span><span class="n">capture_content</span> <span class="o">=</span> <span class="kc">False</span>
+
+<span class="c1"># After processing (in pipeline finalization)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">capture_content</span><span class="p">:</span>
+    <span class="k">for</span> <span class="n">stage</span> <span class="ow">in</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">stages</span><span class="p">:</span>
+        <span class="n">stage</span><span class="o">.</span><span class="n">input_content</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">stage</span><span class="o">.</span><span class="n">output_content</span> <span class="o">=</span> <span class="kc">None</span>
+        <span class="n">stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">outcome</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">]&quot;</span>
+</code></pre>
+<p>See <a href="../security-model.md#content-clearing-rules">Content Clearing Rules</a> in the Security Model for the complete specification.</p>
+<h2 id="related-decisions">Related Decisions</h2>
+<ul>
+<li><strong>ADR-006</strong>: Critical Auditing Plugin Failure Modes (audit plugin error handling)</li>
+<li><strong>ADR-011</strong>: Response Filtering Fail-Closed Strategy (security-first defaults)</li>
+<li><strong>ADR-022</strong>: Unified Plugin Result (PluginResult structure)</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

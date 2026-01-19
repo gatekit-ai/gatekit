@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-023: Pipeline Reason Concatenation for Audit Logging - Gatekit Documentation</title>
+  <meta name="description" content="With the introduction of ProcessingPipeline, Gatekit now supports multiple plugins processing each message (requests, responses, notifications). Each plugin ...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-023-pipeline-reason-concatenation-for-audit-logging">ADR-023: Pipeline Reason Concatenation for Audit Logging</h1>
+<h2 id="context">Context</h2>
+<p>With the introduction of ProcessingPipeline, Gatekit now supports multiple plugins processing each message (requests, responses, notifications). Each plugin can provide its own custom reason in the PluginResult:</p>
+<pre><code class="language-python"><span class="c1"># Individual plugin results, each with custom reasons</span>
+<span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Tool &#39;read_file&#39; is in allowlist for server &#39;filesystem&#39;&quot;</span><span class="p">)</span>
+<span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;No PII detected&quot;</span><span class="p">)</span>  
+<span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;No secrets detected&quot;</span><span class="p">)</span>
+</code></pre>
+<p>However, the auditing system needs to extract <strong>one single reason</strong> for the pipeline-level logging. The previous implementation used a complex lambda expression with priority-based reason selection:</p>
+<pre><code class="language-python"><span class="s2">&quot;reason&quot;</span><span class="p">:</span> <span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="p">(</span>
+    <span class="p">(</span><span class="n">modified_stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span> <span class="k">if</span> <span class="n">modified_stage</span> <span class="ow">and</span> <span class="n">modified_stage</span><span class="o">.</span><span class="n">result</span> <span class="ow">and</span> <span class="n">modified_stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="ow">or</span> <span class="p">(</span><span class="nb">next</span><span class="p">((</span><span class="n">s</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">stages</span> <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">plugin_name</span> <span class="o">==</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">blocked_at_stage</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">result</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="p">),</span> <span class="kc">None</span><span class="p">))</span>
+    <span class="ow">or</span> <span class="p">(</span><span class="nb">next</span><span class="p">((</span><span class="n">s</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">stages</span> <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">result</span> <span class="ow">and</span> <span class="n">s</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="p">),</span> <span class="kc">None</span><span class="p">))</span>  <span class="c1"># Any stage with a reason</span>
+    <span class="ow">or</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">pipeline_outcome</span><span class="o">.</span><span class="n">value</span>
+<span class="p">))(),</span>
+</code></pre>
+<p>This approach had several problems:</p>
+<h3 id="issues-with-previous-approach">Issues with Previous Approach</h3>
+<ol>
+<li><strong>Unpredictable Results</strong>: The &quot;first custom reason found&quot; was essentially random, determined by plugin execution order</li>
+<li><strong>Information Loss</strong>: Only one plugin's reason was preserved, losing visibility into other security decisions</li>
+<li><strong>Poor User Experience</strong>: Users would see generic reasons like &quot;No PII detected&quot; even when more specific policy decisions were made</li>
+<li><strong>Hard to Maintain</strong>: The complex lambda was difficult to understand and modify</li>
+<li><strong>Inconsistent Semantics</strong>: What does &quot;the pipeline reason&quot; mean when multiple plugins provide different reasons?</li>
+</ol>
+<h3 id="example-problems">Example Problems</h3>
+<pre><code class="language-text"><span class="err">#</span><span class="w"> </span><span class="n">What</span><span class="w"> </span><span class="n">users</span><span class="w"> </span><span class="n">would</span><span class="w"> </span><span class="n">see</span><span class="w"> </span><span class="p">(</span><span class="n">random</span><span class="w"> </span><span class="n">based</span><span class="w"> </span><span class="k">on</span><span class="w"> </span><span class="n">execution</span><span class="w"> </span><span class="k">order</span><span class="p">)</span><span class="err">:</span>
+<span class="ss">&quot;No PII detected&quot;</span><span class="w">  </span><span class="err">#</span><span class="w"> </span><span class="n">Even</span><span class="w"> </span><span class="n">though</span><span class="w"> </span><span class="n">tool</span><span class="w"> </span><span class="n">was</span><span class="w"> </span><span class="n">explicitly</span><span class="w"> </span><span class="n">allowed</span><span class="w"> </span><span class="k">by</span><span class="w"> </span><span class="n">allowlist</span>
+
+<span class="err">#</span><span class="w"> </span><span class="n">What</span><span class="w"> </span><span class="n">they</span><span class="w"> </span><span class="n">should</span><span class="w"> </span><span class="nl">see</span><span class="p">:</span>
+<span class="ss">&quot;[tool_manager] Tool &#39;read_file&#39; is in allowlist | [pii] No PII detected | [secrets] No secrets detected&quot;</span>
+</code></pre>
+<h2 id="decision">Decision</h2>
+<p><strong>We will concatenate all plugin reasons using a pipe separator (<code>|</code>) for pipeline-level audit logging.</strong></p>
+<h3 id="implementation">Implementation</h3>
+<p>Replace the complex reason selection logic with simple concatenation:</p>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">_combine_pipeline_reasons</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">pipeline</span><span class="p">:</span> <span class="n">ProcessingPipeline</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Combine reasons from all pipeline stages into a single string for logging.&quot;&quot;&quot;</span>
+
+    <span class="c1"># Collect all non-empty reasons from pipeline stages in execution order</span>
+    <span class="c1"># Each reason is prefixed with the plugin name in brackets</span>
+    <span class="n">reasons</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">stage</span> <span class="ow">in</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">stages</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">stage</span><span class="o">.</span><span class="n">result</span> <span class="ow">and</span> <span class="n">stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">plugin_name</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">stage</span><span class="o">.</span><span class="n">result</span><span class="o">.</span><span class="n">reason</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># If we have plugin reasons, concatenate them with pipe separator</span>
+    <span class="k">if</span> <span class="n">reasons</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot; | &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">reasons</span><span class="p">)</span>
+
+    <span class="c1"># Fallback to generic pipeline outcome if no plugin reasons available</span>
+    <span class="k">return</span> <span class="n">pipeline</span><span class="o">.</span><span class="n">pipeline_outcome</span><span class="o">.</span><span class="n">value</span>
+</code></pre>
+<h3 id="separator-choice">Separator Choice</h3>
+<p>We chose <code>|</code> (pipe with spaces) because:</p>
+<ul>
+<li><strong>Visual Clarity</strong>: More distinct than commas in log analysis</li>
+<li><strong>Technical Convention</strong>: Common separator in logs and technical contexts</li>
+<li><strong>Programmatic Parsing</strong>: Easy to split on <code>|</code> if needed for structured analysis</li>
+<li><strong>Readability</strong>: Clear separation without being overly verbose</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ol>
+<li><strong>Complete Transparency</strong>: Users see all security decisions made during processing</li>
+<li><strong>Deterministic</strong>: Same pipeline configuration produces same reason strings</li>
+<li><strong>No Information Loss</strong>: Every plugin's custom reason is preserved</li>
+<li><strong>Simple to Understand</strong>: Clear concatenation logic that users can predict</li>
+<li><strong>Better Debugging</strong>: Full visibility into security pipeline processing</li>
+<li><strong>Maintainable</strong>: Simple, readable code replacing complex lambda</li>
+</ol>
+<h3 id="negative">Negative</h3>
+<ol>
+<li><strong>Longer Log Lines</strong>: Concatenated reasons can be verbose</li>
+<li><strong>Some Redundancy</strong>: May include generic &quot;No X detected&quot; messages alongside specific decisions</li>
+<li><strong>Not Optimized</strong>: Doesn't prioritize more important reasons over generic ones</li>
+</ol>
+<h3 id="examples">Examples</h3>
+<pre><code class="language-text"><span class="err">#</span><span class="w"> </span><span class="n">Single</span><span class="w"> </span><span class="n">plugin</span><span class="w"> </span><span class="nl">decision</span><span class="p">:</span>
+<span class="ss">&quot;[tool_manager] Tool &#39;read_file&#39; is in allowlist for server &#39;filesystem&#39;&quot;</span>
+
+<span class="err">#</span><span class="w"> </span><span class="n">Multiple</span><span class="w"> </span><span class="n">plugins</span><span class="p">,</span><span class="w"> </span><span class="ow">all</span><span class="w"> </span><span class="nl">clean</span><span class="p">:</span>
+<span class="ss">&quot;[tool_manager] Tool &#39;read_file&#39; is in allowlist for server &#39;filesystem&#39; | [pii] No PII detected | [secrets] No secrets detected&quot;</span>
+
+<span class="err">#</span><span class="w"> </span><span class="n">Content</span><span class="w"> </span><span class="n">modification</span><span class="w"> </span><span class="k">with</span><span class="w"> </span><span class="n">multiple</span><span class="w"> </span><span class="nl">checks</span><span class="p">:</span>
+<span class="ss">&quot;[pii] PII detected and redacted from request: ssn | [tool_manager] Tool allowed | [secrets] No secrets detected&quot;</span>
+
+<span class="err">#</span><span class="w"> </span><span class="n">Blocked</span><span class="w"> </span><span class="nl">request</span><span class="p">:</span>
+<span class="ss">&quot;[tool_manager] Tool &#39;dangerous_tool&#39; is not in allowlist for server &#39;filesystem&#39;&quot;</span>
+</code></pre>
+<h2 id="future-considerations">Future Considerations</h2>
+<p>This is intended as a <strong>v0.1.0 solution</strong> that prioritizes transparency and correctness over optimization. Future versions may implement:</p>
+<ol>
+<li><strong>Reason Prioritization</strong>: Filter out generic reasons, prioritize content modifications and specific policy decisions</li>
+<li><strong>Structured Logging</strong>: Separate fields for different types of reasons (security decisions, content modifications, etc.)</li>
+<li><strong>Configurable Verbosity</strong>: Allow users to choose between concise vs. verbose reason reporting</li>
+<li><strong>Reason Categories</strong>: Group reasons by importance (critical, informational, etc.)</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<ol>
+<li><p><strong>Priority-Based Selection</strong>: Continue with single reason but improve priority logic</p>
+<ul>
+<li>Rejected: Still loses information and requires complex priority rules</li>
+</ul>
+</li>
+<li><p><strong>Structured JSON Reasons</strong>: Include all reasons as structured data</p>
+<ul>
+<li>Rejected: Too complex for v0.1.0, breaks existing log parsing</li>
+</ul>
+</li>
+<li><p><strong>Most Important Reason Only</strong>: Select blocking &gt; modification &gt; policy &gt; generic</p>
+<ul>
+<li>Rejected: Information loss, complex to define &quot;importance&quot; rules</li>
+</ul>
+</li>
+<li><p><strong>Summary + Detail</strong>: Short pipeline reason + detailed stage list</p>
+<ul>
+<li>Rejected: Adds complexity without clear benefit for initial release</li>
+</ul>
+</li>
+</ol>
+<h2 id="notes">Notes</h2>
+<ul>
+<li>This change affects all auditing plugins (JSON Lines, CSV, Human Readable)</li>
+<li>Existing log parsers may need updates to handle longer reason strings</li>
+<li>The pipe separator can be easily changed if needed without affecting the core logic</li>
+<li>Individual stage reasons remain available in the ProcessingPipeline for any advanced analysis needs</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

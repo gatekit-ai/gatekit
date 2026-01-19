@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-025: Base64 Detection Forced Blocking - Gatekit Documentation</title>
+  <meta name="description" content="The PII filter and secrets filter plugins support scanning base64-encoded content for sensitive data via the `scan_base64` configuration option. When enabled...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-025-base64-detection-forced-blocking">ADR-025: Base64 Detection Forced Blocking</h1>
+<h2 id="context">Context</h2>
+<p>The PII filter and secrets filter plugins support scanning base64-encoded content for sensitive data via the <code>scan_base64</code> configuration option. When enabled, these plugins decode base64 strings and scan the decoded content for patterns.</p>
+<p>Both plugins also support an <code>action</code> configuration that determines what happens when sensitive data is detected:</p>
+<ul>
+<li><code>block</code>: Reject the message entirely</li>
+<li><code>redact</code>: Replace sensitive data with placeholder text, allow message to proceed</li>
+<li><code>audit_only</code>: Log the detection, allow message to proceed unchanged</li>
+</ul>
+<h3 id="the-problem">The Problem</h3>
+<p>When <code>scan_base64: true</code> and <code>action: redact</code> are both configured, the plugin detects sensitive data within base64-encoded content and attempts to redact it. However, <strong>redaction is impossible for base64-encoded content</strong>.</p>
+<p>Base64 encoding represents binary data (images, files, etc.) as ASCII text. Any modification to the base64 string - even replacing a single character - corrupts the underlying binary data:</p>
+<ol>
+<li>Inserting <code>[REDACTED]</code> introduces non-base64 characters, making the string invalid</li>
+<li>Even keeping valid base64 characters would decode to corrupted binary data</li>
+<li>The resulting image/file would be unusable or cause downstream errors</li>
+</ol>
+<h2 id="decision">Decision</h2>
+<p><strong>When sensitive data is detected within base64-encoded content and the configured action is <code>redact</code>, the plugin MUST block instead.</strong></p>
+<p>Redaction is impossible for base64 content, so attempting it would corrupt the data. The <code>audit_only</code> action is unaffected since it doesn't modify content. For base64 detections:</p>
+<table>
+<thead>
+<tr>
+  <th>Configured Action</th>
+  <th>Plain Text Detection</th>
+  <th>Base64 Detection</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>block</code></td>
+  <td>Block</td>
+  <td>Block</td>
+</tr>
+<tr>
+  <td><code>redact</code></td>
+  <td>Redact</td>
+  <td><strong>Block</strong> (forced)</td>
+</tr>
+<tr>
+  <td><code>audit_only</code></td>
+  <td>Allow + log</td>
+  <td>Allow + log</td>
+</tr>
+</tbody>
+</table>
+<p>Note: <code>audit_only</code> still allows the message through because no modification is attempted.</p>
+<h3 id="implementation">Implementation</h3>
+<p>Both plugins check if any detection has base64 encoding metadata:</p>
+<ul>
+<li>Secrets filter: <code>encoding_type: &quot;base64&quot;</code></li>
+<li>PII filter: <code>encoding: &quot;base64&quot;</code></li>
+</ul>
+<p>When base64 detections are present and the action would be <code>redact</code>, the effective action is forced to <code>block</code>. The metadata includes <code>base64_force_block: true</code> to indicate this override occurred.</p>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Data integrity preserved</strong>: Binary data is never corrupted by failed redaction attempts</li>
+<li><strong>Predictable behavior</strong>: Users understand that base64 content cannot be redacted</li>
+<li><strong>Clear audit trail</strong>: Metadata indicates when blocking was forced due to base64 content</li>
+<li><strong>Security maintained</strong>: Sensitive data in base64 is still prevented from transmission</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Less granular control</strong>: Users cannot choose to &quot;redact&quot; base64 content (but this was never actually possible)</li>
+<li><strong>Potential for more blocking</strong>: Content that would have been &quot;redacted&quot; (corrupted) is now blocked entirely</li>
+</ul>
+<h3 id="user-guidance">User Guidance</h3>
+<p>Users who want to allow base64 content through while still detecting sensitive data should use <code>action: audit_only</code>. This logs detections without modifying content.</p>
+<p>For users who need base64 content to pass through unexamined, disable base64 scanning with <code>scan_base64: false</code> (the default).</p>
+<h2 id="related-adrs">Related ADRs</h2>
+<ul>
+<li><strong>ADR-024</strong>: Security Plugin Detection Option Defaults - Establishes that <code>scan_base64</code> defaults to <code>false</code></li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

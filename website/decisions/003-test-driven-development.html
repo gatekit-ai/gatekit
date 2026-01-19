@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-003: Test-Driven Development Approach - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit is a security-critical component that sits between MCP clients and servers. It must:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-003-test-driven-development-approach">ADR-003: Test-Driven Development Approach</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit is a security-critical component that sits between MCP clients and servers. It must:</p>
+<ol>
+<li>Reliably validate and filter potentially malicious requests</li>
+<li>Maintain protocol compliance with MCP specifications</li>
+<li>Handle edge cases and error conditions gracefully</li>
+<li>Support future protocol evolution without regression</li>
+<li>Provide confidence in security guarantees</li>
+</ol>
+<p>Given the security-critical nature and the need for robust protocol handling, we need a development approach that ensures comprehensive testing and high code quality.</p>
+<h2 id="decision">Decision</h2>
+<p>We will follow a <strong>Test-Driven Development (TDD)</strong> approach throughout the project:</p>
+<pre><code class="language-python"><span class="c1"># Example TDD cycle for message validation</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TestMessageValidation</span><span class="p">:</span>
+    <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_valid_request_passes_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Red: Write failing test first</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;jsonrpc&quot;</span><span class="p">:</span> <span class="s2">&quot;2.0&quot;</span><span class="p">,</span> <span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="s2">&quot;ping&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+        <span class="n">validator</span> <span class="o">=</span> <span class="n">MessageValidator</span><span class="p">()</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">validator</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>  <span class="c1"># Validation is synchronous</span>
+        <span class="k">assert</span> <span class="n">result</span><span class="o">.</span><span class="n">is_valid</span>
+        <span class="k">assert</span> <span class="n">result</span><span class="o">.</span><span class="n">errors</span> <span class="o">==</span> <span class="p">[]</span>
+
+    <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_missing_jsonrpc_fails_validation</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="c1"># Red: Write failing test</span>
+        <span class="n">request</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;method&quot;</span><span class="p">:</span> <span class="s2">&quot;ping&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>  <span class="c1"># Missing jsonrpc</span>
+        <span class="n">validator</span> <span class="o">=</span> <span class="n">MessageValidator</span><span class="p">()</span>
+
+        <span class="n">result</span> <span class="o">=</span> <span class="n">validator</span><span class="o">.</span><span class="n">validate</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>  <span class="c1"># Validation is synchronous</span>
+        <span class="k">assert</span> <span class="ow">not</span> <span class="n">result</span><span class="o">.</span><span class="n">is_valid</span>
+        <span class="k">assert</span> <span class="s2">&quot;jsonrpc field required&quot;</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">errors</span>
+</code></pre>
+<h3 id="key-principles">Key Principles</h3>
+<ol>
+<li><strong>Red-Green-Refactor Cycle</strong>: Write test → Make it pass → Improve code</li>
+<li><strong>Test First</strong>: No production code without a failing test</li>
+<li><strong>Comprehensive Coverage</strong>: Test happy path, edge cases, and error conditions</li>
+<li><strong>Fast Feedback</strong>: Tests run quickly and provide immediate feedback</li>
+<li><strong>Living Documentation</strong>: Tests serve as executable specifications</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-traditional-test-after-development">Alternative 1: Traditional Test-After Development</h3>
+<pre><code class="language-python"><span class="c1"># Write implementation first, then add tests</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">implement_feature</span><span class="p">():</span>
+    <span class="c1"># Build the feature</span>
+    <span class="k">pass</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_feature</span><span class="p">():</span>
+    <span class="c1"># Test the built feature</span>
+    <span class="k">pass</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Faster initial development, familiar approach</li>
+<li><strong>Cons</strong>: Often leads to untestable code, missing edge cases, lower coverage</li>
+</ul>
+<h3 id="alternative-2-behavior-driven-development-bdd">Alternative 2: Behavior-Driven Development (BDD)</h3>
+<pre><code class="language-python"><span class="c1"># Feature: Message Validation</span>
+<span class="c1"># Scenario: Valid message passes validation</span>
+<span class="c1"># Given a valid JSON-RPC message</span>
+<span class="c1"># When validation is performed</span>
+<span class="c1"># Then the message should be accepted</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Business-readable specifications, stakeholder involvement</li>
+<li><strong>Cons</strong>: Additional tooling complexity, overkill for technical components</li>
+</ul>
+<h3 id="alternative-3-property-based-testing-only">Alternative 3: Property-Based Testing Only</h3>
+<pre><code class="language-python"><span class="nd">@given</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">dictionaries</span><span class="p">(</span><span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">(),</span> <span class="n">st</span><span class="o">.</span><span class="n">text</span><span class="p">()))</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_message_validation</span><span class="p">(</span><span class="n">message</span><span class="p">):</span>
+    <span class="c1"># Generate random inputs and test properties</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">validate</span><span class="p">(</span><span class="n">message</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="n">ValidationResult</span><span class="p">)</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Discovers edge cases automatically</li>
+<li><strong>Cons</strong>: Harder to understand failures, doesn't replace example-based tests</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>High Confidence</strong>: Comprehensive test coverage provides confidence in changes</li>
+<li><strong>Better Design</strong>: TDD drives towards more testable, modular code</li>
+<li><strong>Regression Prevention</strong>: Tests catch breaking changes immediately</li>
+<li><strong>Documentation</strong>: Tests serve as living examples of how code should work</li>
+<li><strong>Faster Debugging</strong>: Failing tests pinpoint exact issues</li>
+<li><strong>Refactoring Safety</strong>: Can improve code structure without fear</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Initial Overhead</strong>: Writing tests first slows initial development</li>
+<li><strong>Learning Curve</strong>: Team must be disciplined about TDD practices</li>
+<li><strong>Test Maintenance</strong>: Tests require ongoing maintenance as code evolves</li>
+<li><strong>Over-Testing Risk</strong>: May write tests for trivial functionality</li>
+</ul>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<h3 id="current-test-structure">Current Test Structure</h3>
+<pre><code class="language-text"><span class="n">tests</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">unit</span><span class="o">/</span><span class="w">                    </span><span class="c1"># Fast, isolated unit tests</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">test_plugin_manager</span><span class="o">.</span><span class="n">py</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">test_config_loader</span><span class="o">.</span><span class="n">py</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="o">...</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">integration</span><span class="o">/</span><span class="w">             </span><span class="c1"># Component integration tests</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">test_pii_integration</span><span class="o">.</span><span class="n">py</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="o">...</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">validation</span><span class="o">/</span><span class="w">              </span><span class="c1"># Manual validation scripts with third-party tools</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">test</span><span class="o">-</span><span class="n">files</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">mocks</span><span class="o">/</span><span class="w">                   </span><span class="c1"># Mock utilities</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">utils</span><span class="o">/</span><span class="w">                   </span><span class="c1"># Test utilities</span>
+<span class="err">└──</span><span class="w"> </span><span class="n">fixtures</span><span class="o">/</span><span class="w">                </span><span class="c1"># Fixture definitions</span>
+</code></pre>
+<h3 id="testing-tools-and-patterns">Testing Tools and Patterns</h3>
+<ul>
+<li><strong>pytest</strong>: Test framework with excellent async support</li>
+<li><strong>pytest-asyncio</strong>: Async test execution (tests require <code>@pytest.mark.asyncio</code> decorator)</li>
+<li><strong>pytest-xdist</strong>: Parallel test execution (<code>pytest tests/ -n auto</code>)</li>
+<li><strong>unittest.mock</strong>: Mocking for isolation (standard library)</li>
+<li><strong>pytest-cov</strong>: Test coverage reporting</li>
+</ul>
+<h3 id="tdd-workflow">TDD Workflow</h3>
+<ol>
+<li><strong>Write failing test</strong> describing desired behavior</li>
+<li><strong>Run test</strong> to confirm it fails for the right reason</li>
+<li><strong>Write minimal code</strong> to make test pass</li>
+<li><strong>Run all tests</strong> to ensure no regression</li>
+<li><strong>Refactor</strong> code and tests for clarity</li>
+<li><strong>Repeat</strong> for next requirement</li>
+</ol>
+<h3 id="example-tdd-implementation">Example TDD Implementation</h3>
+<pre><code class="language-python"><span class="c1"># Red: Test for transport connection</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_stdio_transport_connects_successfully</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">transport</span> <span class="o">=</span> <span class="n">StdioTransport</span><span class="p">(</span><span class="n">command</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;echo&quot;</span><span class="p">,</span> <span class="s2">&quot;test&quot;</span><span class="p">])</span>
+    <span class="k">await</span> <span class="n">transport</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">transport</span><span class="o">.</span><span class="n">is_connected</span>
+
+<span class="c1"># Green: Minimal implementation</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StdioTransport</span><span class="p">:</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">process</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_subprocess_exec</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_connected</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="c1"># Refactor: Improve error handling and resource management</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StdioTransport</span><span class="p">:</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">process</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_subprocess_exec</span><span class="p">(</span>
+                <span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">command</span><span class="p">,</span>
+                <span class="n">stdin</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
+                <span class="n">stdout</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">,</span>
+                <span class="n">stderr</span><span class="o">=</span><span class="n">asyncio</span><span class="o">.</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span>
+            <span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">is_connected</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">TransportConnectionError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to connect: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre>
+<h2 id="review">Review</h2>
+<p>This decision will be reviewed when:</p>
+<ul>
+<li>Development velocity significantly decreases due to test overhead</li>
+<li>Test maintenance burden becomes excessive</li>
+<li>Team composition changes significantly</li>
+<li>Project requirements shift away from security-critical operations</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

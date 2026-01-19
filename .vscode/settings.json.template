@@ -1,0 +1,18 @@
+{
+  "yaml.schemas": {
+    "./schemas/gatekit.schema.json": [
+      "gatekit.yaml",
+      "gatekit.yml",
+      "configs/*.yaml",
+      "configs/**/*.yaml"
+    ]
+  },
+  "json.schemas": [
+    {
+      "fileMatch": [
+        "schemas/*.schema.json"
+      ],
+      "url": "https://json-schema.org/draft/2020-12/schema"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+handler: call_trace
+category: middleware
+description: >-
+  Edge case exercising numeric boundaries and toggling nearly every trace flag
+  off to emulate a privacy-focused deployment.
+config:
+  enabled: true
+  critical: true
+  priority: 10
+  max_param_length: 0
+  trace_fields:
+    server: false
+    tool: true
+    params: false
+    response_size: false
+    duration: false
+    request_id: true
+    timestamp: false

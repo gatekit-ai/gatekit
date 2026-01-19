@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-011: Response Filtering Exception Handling - Fail-Closed Strategy - Gatekit Documentation</title>
+  <meta name="description" content="When implementing tools/list response filtering (see ADR-010), we needed to decide how to handle unexpected exceptions that occur during response processing....">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-011-response-filtering-exception-handling-fail-closed-strategy">ADR-011: Response Filtering Exception Handling - Fail-Closed Strategy</h1>
+<p><strong>Note</strong>: The fail-closed strategy applies to all plugins via the <code>critical</code> flag (default: <code>true</code>). See ADR-006 for the unified critical plugin failure modes.</p>
+<h2 id="context">Context</h2>
+<p>When implementing tools/list response filtering (see ADR-010), we needed to decide how to handle unexpected exceptions that occur during response processing. This decision has significant implications for reliability.</p>
+<p>Two main categories of errors can occur during response filtering:</p>
+<ol>
+<li><strong>Expected malformed responses</strong>: Missing fields, wrong data types, empty arrays</li>
+<li><strong>Unexpected exceptions</strong>: Programming errors, memory issues, unforeseen data structures</li>
+</ol>
+<p>The key question was whether to &quot;fail open&quot; (allow potentially unfiltered responses through) or &quot;fail closed&quot; (block responses when filtering encounters unexpected errors).</p>
+<h3 id="security-context">Security Context</h3>
+<p>Tool allowlist filtering is a security control that prevents information disclosure. If filtering fails:</p>
+<ul>
+<li><strong>Fail Open</strong>: Unfiltered response may expose blocked tools to clients</li>
+<li><strong>Fail Closed</strong>: Filtering failure blocks the entire response</li>
+</ul>
+<h3 id="use-cases-affected">Use Cases Affected</h3>
+<ol>
+<li><strong>Development environments</strong>: Filtering bugs should be debuggable</li>
+<li><strong>Production environments</strong>: Security controls must be reliable</li>
+<li><strong>High-availability systems</strong>: Service availability vs. security trade-offs</li>
+<li><strong>Compliance environments</strong>: Audit requirements for security control failures</li>
+</ol>
+<h2 id="decision">Decision</h2>
+<p>We will implement a <strong>fail-closed strategy for unexpected exceptions</strong> while gracefully handling expected malformed response scenarios.</p>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Handle expected malformed response cases gracefully</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span> <span class="ow">or</span> <span class="s2">&quot;tools&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+                <span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+                <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Malformed tools/list response: missing tools field&quot;</span>
+            <span class="p">)</span>
+        
+        <span class="c1"># Perform filtering logic</span>
+        <span class="n">filtered_tools</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_tools_by_policy</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;tools&quot;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">create_filtered_response</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">filtered_tools</span><span class="p">)</span>
+        
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="c1"># FAIL CLOSED: Block response on unexpected exceptions</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+            <span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Error filtering tools/list response: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)}</span>
+        <span class="p">)</span>
+</code></pre>
+<h3 id="exception-handling-strategy">Exception Handling Strategy</h3>
+<table>
+<thead>
+<tr>
+  <th>Error Type</th>
+  <th>Handling</th>
+  <th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Missing <code>tools</code> field</td>
+  <td>Fail closed with specific error</td>
+  <td>Expected malformed response</td>
+</tr>
+<tr>
+  <td><code>tools</code> not an array</td>
+  <td>Fail closed with specific error</td>
+  <td>Expected malformed response</td>
+</tr>
+<tr>
+  <td>Tool missing <code>name</code> field</td>
+  <td>Skip tool, continue filtering</td>
+  <td>Expected malformed tool object</td>
+</tr>
+<tr>
+  <td>Unexpected exception</td>
+  <td>Fail closed with generic error</td>
+  <td>Unexpected error - preserve security</td>
+</tr>
+</tbody>
+</table>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-fail-open-strategy">Alternative 1: Fail-Open Strategy</h3>
+<pre><code class="language-python"><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># FAIL OPEN: Allow original response through</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Filter error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+        <span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Filtering failed, allowing original response&quot;</span>
+    <span class="p">)</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Security vulnerability</strong>: Blocked tools could be exposed during filter failures</li>
+<li><strong>Inconsistent policy enforcement</strong>: Security controls become unreliable</li>
+<li><strong>Attack vector</strong>: Attackers might trigger filter failures to bypass restrictions</li>
+<li><strong>Compliance risk</strong>: Audit failures in regulated environments</li>
+</ul>
+<h3 id="alternative-2-configurable-failure-mode">Alternative 2: Configurable Failure Mode</h3>
+<p>This alternative was actually <strong>adopted</strong> as the <code>critical</code> flag on all plugins:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># Default - fail-closed on errors</span>
+</code></pre>
+<p>The <code>critical</code> flag (default: <code>true</code>) provides configurable fail-closed/fail-open behavior while defaulting to the secure option. See ADR-006 for details.</p>
+<h3 id="alternative-3-graceful-degradation-with-warnings">Alternative 3: Graceful Degradation with Warnings</h3>
+<pre><code class="language-python"><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># Allow through with warning in response</span>
+    <span class="n">modified_response</span> <span class="o">=</span> <span class="n">add_warning_to_response</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Filter error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+        <span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">modified_content</span><span class="o">=</span><span class="n">modified_response</span><span class="p">,</span>
+        <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Filtering failed, added warning&quot;</span>
+    <span class="p">)</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Information disclosure</strong>: Still exposes potentially blocked tools</li>
+<li><strong>Client confusion</strong>: Clients may not understand warning semantics</li>
+<li><strong>Response modification complexity</strong>: Need to modify response structure</li>
+<li><strong>Limited security value</strong>: Warning doesn't prevent information exposure</li>
+</ul>
+<h3 id="alternative-4-retry-with-fallback">Alternative 4: Retry with Fallback</h3>
+<pre><code class="language-python"><span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+    <span class="c1"># Retry filtering once, then fail closed</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_retry_filtering</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Filter retry failed&quot;</span><span class="p">)</span>
+</code></pre>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li><strong>Complexity</strong>: Retry logic is complex and error-prone</li>
+<li><strong>Performance impact</strong>: Doubles processing time on failures</li>
+<li><strong>Limited value</strong>: Most exceptions are not transient</li>
+<li><strong>Still needs fail-closed fallback</strong>: Doesn't eliminate the core decision</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Security-First</strong>: Preserves security control integrity under all conditions</li>
+<li><strong>Predictable Behavior</strong>: Consistent failure mode across all error scenarios</li>
+<li><strong>Audit Compliance</strong>: Failed security controls are clearly logged and blocked</li>
+<li><strong>Attack Resistance</strong>: Attackers cannot bypass filtering by triggering exceptions</li>
+<li><strong>Clear Error Messages</strong>: Specific error reasons aid debugging</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Availability Impact</strong>: Filter bugs can block legitimate tool discovery</li>
+<li><strong>Debugging Complexity</strong>: Failed responses may be harder to troubleshoot</li>
+<li><strong>Development Friction</strong>: Filter implementation bugs cause immediate failures</li>
+<li><strong>False Positives</strong>: Legitimate responses blocked due to filter bugs</li>
+</ul>
+<h3 id="mitigation-strategies">Mitigation Strategies</h3>
+<ol>
+<li><strong>Comprehensive Testing</strong>: Extensive test coverage for filtering logic</li>
+<li><strong>Detailed Error Logging</strong>: Include exception details for debugging</li>
+<li><strong>Allow-All Escape Hatch</strong>: Development mode to bypass filtering</li>
+<li><strong>Monitoring</strong>: Alert on filtering failure rates</li>
+<li><strong>Graceful Expected Error Handling</strong>: Handle known malformed response patterns</li>
+</ol>
+<h2 id="implementation-details">Implementation Details</h2>
+<h3 id="exception-handling-hierarchy">Exception Handling Hierarchy</h3>
+<pre><code class="language-python"><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_response</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PluginResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Filter tools/list responses with fail-closed exception handling.&quot;&quot;&quot;</span>
+    
+    <span class="c1"># Early validation for expected malformed responses</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_tools_list_response</span><span class="p">(</span><span class="n">response</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+            <span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Not a tools/list response, no filtering needed&quot;</span>
+        <span class="p">)</span>
+    
+    <span class="k">try</span><span class="p">:</span>
+        <span class="c1"># Validate response structure (expected errors)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_tools_list_structure</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>
+        
+        <span class="c1"># Perform filtering (unexpected errors caught below)</span>
+        <span class="n">filtered_tools</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_filter_tools_by_policy</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;tools&quot;</span><span class="p">])</span>
+        
+        <span class="c1"># Create and return filtered response</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_create_filtered_response</span><span class="p">(</span><span class="n">response</span><span class="p">,</span> <span class="n">filtered_tools</span><span class="p">)</span>
+        
+    <span class="k">except</span> <span class="n">ValidationError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="c1"># Expected malformed response - fail closed with specific reason</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+            <span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Malformed tools/list response: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;error_type&quot;</span><span class="p">:</span> <span class="s2">&quot;validation&quot;</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)}</span>
+        <span class="p">)</span>
+        
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="c1"># Unexpected exception - fail closed with generic reason</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Unexpected error filtering tools/list response: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">exc_info</span><span class="o">=</span><span class="kc">True</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">PluginResult</span><span class="p">(</span>
+            <span class="n">allowed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">reason</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Error filtering tools/list response: </span><span class="si">{</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;error_type&quot;</span><span class="p">:</span> <span class="s2">&quot;unexpected&quot;</span><span class="p">,</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)}</span>
+        <span class="p">)</span>
+</code></pre>
+<h3 id="validation-helper-methods">Validation Helper Methods</h3>
+<pre><code class="language-python"><span class="k">def</span><span class="w"> </span><span class="nf">_validate_tools_list_structure</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">response</span><span class="p">:</span> <span class="n">MCPResponse</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate tools/list response structure, raise ValidationError if invalid.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="s2">&quot;Missing result field&quot;</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="s2">&quot;tools&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="s2">&quot;Missing tools field in result&quot;</span><span class="p">)</span>
+    
+    <span class="n">tools_list</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">result</span><span class="p">[</span><span class="s2">&quot;tools&quot;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">tools_list</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="n">ValidationError</span><span class="p">(</span><span class="s2">&quot;tools field is not an array&quot;</span><span class="p">)</span>
+</code></pre>
+<h3 id="error-monitoring">Error Monitoring</h3>
+<p>Error monitoring is handled through:</p>
+<ul>
+<li><strong>Auditing plugins</strong>: Log all pipeline stages including errors</li>
+<li><strong>Processing pipeline</strong>: Full visibility into plugin decisions via <code>ProcessingPipeline</code></li>
+<li><strong>Structured logging</strong>: Errors logged with context for debugging</li>
+</ul>
+<p>Note: Prometheus-style metrics are not currently implemented.</p>
+<p>This fail-closed strategy ensures that Gatekit's plugins remain reliable even when facing unexpected errors, while providing clear debugging information for resolution. The <code>critical</code> flag (see ADR-006) allows opt-out for development scenarios.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

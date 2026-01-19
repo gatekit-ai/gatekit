@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-014: Multi-Server Support Architecture - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit supports proxying to one or more upstream MCP servers. Real-world usage patterns often require connecting to multiple MCP servers simultaneously:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-014-multi-server-support-architecture">ADR-014: Multi-Server Support Architecture</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit supports proxying to one or more upstream MCP servers. Real-world usage patterns often require connecting to multiple MCP servers simultaneously:</p>
+<ol>
+<li><strong>Specialized Servers</strong>: Different servers provide different capabilities (filesystem, GitHub, databases, etc.)</li>
+<li><strong>Service Isolation</strong>: Separate servers for different security domains or environments</li>
+<li><strong>Performance Distribution</strong>: Load distribution across multiple server instances</li>
+<li><strong>Flexible Deployment</strong>: Ability to start with one server and add more servers over time</li>
+</ol>
+<p>The architecture provides:</p>
+<ul>
+<li>Consistent behavior whether using one or multiple servers</li>
+<li>Clean tool discovery and routing</li>
+<li>Consistent security policy application across all servers</li>
+<li>Simple client experience without protocol changes</li>
+</ul>
+<h2 id="decision">Decision</h2>
+<p>We implemented a <strong>flat list configuration architecture</strong> with intelligent request routing:</p>
+<h3 id="core-architecture">Core Architecture</h3>
+<ol>
+<li><strong>ServerManager</strong>: Centralized management of multiple upstream server connections</li>
+<li><strong>Tool Name Prefixing</strong>: Automatic prefixing of tool names with server identifiers</li>
+<li><strong>Request Routing</strong>: Parse tool names to route requests to appropriate servers</li>
+<li><strong>Consistent Architecture</strong>: Unified handling whether one or multiple servers are configured</li>
+</ol>
+<h3 id="configuration-design">Configuration Design</h3>
+<pre><code class="language-yaml"><span class="c1"># Single server (ALL servers must have names for consistency)</span>
+<span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="c1"># Multiple servers</span>
+<span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;github&quot;</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<p><strong>IMPORTANT</strong>: All servers MUST have names. This simplifies plugin configuration and provides consistent architecture.</p>
+<h3 id="tool-discovery-and-routing">Tool Discovery and Routing</h3>
+<pre><code class="language-python"><span class="c1"># Tool names are automatically prefixed with double underscore separator</span>
+<span class="c1"># Original: &quot;read_file&quot; -&gt; Multi-server: &quot;filesystem__read_file&quot;</span>
+<span class="c1"># Original: &quot;create_issue&quot; -&gt; Multi-server: &quot;github__create_issue&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_tool_name</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse server name and original tool name&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="s1">&#39;__&#39;</span> <span class="ow">in</span> <span class="n">tool_name</span><span class="p">:</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">tool_name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;__&#39;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">server_manager</span><span class="o">.</span><span class="n">servers</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">return</span> <span class="s2">&quot;default&quot;</span><span class="p">,</span> <span class="n">tool_name</span>
+</code></pre>
+<h3 id="implementation-components">Implementation Components</h3>
+<ol>
+<li><strong>ServerManager Class</strong>: Handles lifecycle management of multiple server connections</li>
+<li><strong>Enhanced UpstreamServer</strong>: Supports named instances and tool prefixing</li>
+<li><strong>Request Routing Layer</strong>: Intelligent routing based on tool name parsing</li>
+<li><strong>Plugin Context Extension</strong>: Security plugins receive server context information</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-hierarchical-configuration">Alternative 1: Hierarchical Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">servers</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">filesystem</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mcp&quot;</span>
+<span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">github</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;mcp&quot;</span>
+<span class="w">    </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<p><strong>Rejected</strong>: More complex, harder to migrate existing configurations, over-engineered for current needs.</p>
+<h3 id="alternative-2-route-based-configuration">Alternative 2: Route-Based Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">routes</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">pattern</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;file_*&quot;</span>
+<span class="w">    </span><span class="nt">server</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">pattern</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;github_*&quot;</span>
+<span class="w">    </span><span class="nt">server</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;github&quot;</span>
+</code></pre>
+<p><strong>Rejected</strong>: Requires explicit routing rules, more configuration overhead, less intuitive.</p>
+<h3 id="alternative-3-namespace-based-tools">Alternative 3: Namespace-Based Tools</h3>
+<pre><code class="language-yaml"><span class="nt">servers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;fs&quot;</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<p><strong>Rejected</strong>: Requires client-side namespace awareness, breaks MCP protocol transparency.</p>
+<h2 id="implementation-strategy">Implementation Strategy</h2>
+<h3 id="phase-1-infrastructure-completed">Phase 1: Infrastructure (Completed)</h3>
+<ul>
+<li><code>ServerManager</code> class for connection management</li>
+<li>Configuration schema updates with validation</li>
+<li><code>UpstreamServer</code> enhancements for named instances</li>
+<li>Backward compatibility preservation</li>
+</ul>
+<h3 id="phase-2-core-functionality-completed">Phase 2: Core Functionality (Completed)</h3>
+<ul>
+<li>Tool name prefixing and parsing</li>
+<li>Request routing logic</li>
+<li>Plugin context extensions</li>
+<li>Error handling and graceful degradation</li>
+</ul>
+<h3 id="phase-3-production-features-completed">Phase 3: Production Features (Completed)</h3>
+<ul>
+<li>Concurrent server startup</li>
+<li>Connection health monitoring</li>
+<li>Comprehensive test coverage</li>
+<li>Documentation and examples</li>
+</ul>
+<h2 id="migration-strategy">Migration Strategy</h2>
+<p><strong>Zero-Breaking-Change Migration</strong>:</p>
+<ol>
+<li>Existing <code>upstream_server</code> configurations continue to work unchanged</li>
+<li>New <code>upstream_servers</code> provides multi-server capabilities</li>
+<li>Configuration validation prevents mixing both approaches</li>
+<li>All tool names are namespaced consistently (unified multi-server architecture)</li>
+</ol>
+<p>Example migration:</p>
+<pre><code class="language-yaml"><span class="c1"># Before (continues to work)</span>
+<span class="nt">upstream_server</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="c1"># After (new capability)</span>
+<span class="nt">upstream_servers</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h2 id="security-implications">Security Implications</h2>
+<h3 id="enhanced-security-context">Enhanced Security Context</h3>
+<ul>
+<li>Security plugins receive server context information</li>
+<li>Per-server security policies possible</li>
+<li>Audit logging tracks which server handled each request</li>
+<li>Resource isolation between servers</li>
+</ul>
+<h3 id="security-benefits">Security Benefits</h3>
+<ul>
+<li><strong>Principle of Least Privilege</strong>: Each server can have different security rules</li>
+<li><strong>Failure Isolation</strong>: One server's compromise doesn't affect others</li>
+<li><strong>Audit Trail</strong>: Clear tracking of which server processed each request</li>
+</ul>
+<h2 id="performance-considerations">Performance Considerations</h2>
+<h3 id="optimization-features">Optimization Features</h3>
+<ul>
+<li><strong>Concurrent Server Startup</strong>: All servers start in parallel</li>
+<li><strong>Connection Reuse</strong>: Efficient connection pooling per server</li>
+<li><strong>Tool Caching</strong>: Reduced discovery overhead</li>
+<li><strong>Lazy Loading</strong>: Servers only connect when needed</li>
+</ul>
+<h3 id="performance-impact">Performance Impact</h3>
+<ul>
+<li>Minimal overhead: Tool name parsing is O(1) operation</li>
+<li>Parallel operations: Multiple servers can handle requests concurrently</li>
+<li>Graceful degradation: System continues with available servers</li>
+</ul>
+<h2 id="testing-strategy">Testing Strategy</h2>
+<h3 id="comprehensive-coverage">Comprehensive Coverage</h3>
+<ul>
+<li><strong>Unit Tests</strong>: ServerManager lifecycle, tool parsing, configuration validation</li>
+<li><strong>Integration Tests</strong>: Multi-server startup, request routing, plugin integration</li>
+<li><strong>E2E Tests</strong>: Real MCP servers, client compatibility, performance validation</li>
+</ul>
+<h3 id="test-scenarios">Test Scenarios</h3>
+<ul>
+<li>Single server backward compatibility</li>
+<li>Multi-server tool discovery and routing</li>
+<li>Server failure handling and recovery</li>
+<li>Security plugin integration with server context</li>
+</ul>
+<h2 id="configuration-schema">Configuration Schema</h2>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">UpstreamConfig</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for a single upstream server&quot;&quot;&quot;</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Unique server identifier&quot;</span><span class="p">)</span>
+    <span class="n">command</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="n">Field</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Command and arguments to start the server&quot;</span><span class="p">)</span>
+    <span class="c1"># Note: Environment variables are NOT configurable per-server.</span>
+    <span class="c1"># Set environment variables in your MCP client or shell instead.</span>
+    
+<span class="k">class</span><span class="w"> </span><span class="nc">GatewayConfig</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Updated gateway configuration&quot;&quot;&quot;</span>
+    <span class="n">upstream_server</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ServerConfigLegacy</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># Backward compatibility</span>
+    <span class="n">upstream_servers</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="n">ServerConfig</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># New multi-server</span>
+    
+    <span class="nd">@validator</span><span class="p">(</span><span class="s1">&#39;upstream_servers&#39;</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_server_config</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">,</span> <span class="n">values</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">v</span> <span class="ow">and</span> <span class="n">values</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;upstream_server&#39;</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot specify both upstream_server and upstream_servers&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">v</span>
+</code></pre>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li><strong>Enhanced Capability</strong>: Connect to multiple specialized MCP servers</li>
+<li><strong>Backward Compatibility</strong>: Existing configurations continue to work</li>
+<li><strong>Clean Architecture</strong>: Extends existing patterns without breaking them</li>
+<li><strong>Security Enhancement</strong>: Per-server security policies and audit trails</li>
+<li><strong>Performance Benefits</strong>: Parallel server operations and connection reuse</li>
+<li><strong>Future-Proof</strong>: Foundation for advanced features like load balancing</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><strong>Increased Complexity</strong>: More sophisticated connection management</li>
+<li><strong>Tool Name Changes</strong>: Multi-server mode changes tool names (with prefixes)</li>
+<li><strong>Configuration Overhead</strong>: More complex configuration when using multiple servers</li>
+<li><strong>Resource Usage</strong>: Additional memory and connections for multiple servers</li>
+</ul>
+<h3 id="neutral">Neutral</h3>
+<ul>
+<li><strong>Client Compatibility</strong>: No changes required for MCP clients</li>
+<li><strong>Plugin Compatibility</strong>: Existing plugins work with minor context enhancements</li>
+<li><strong>Operational Impact</strong>: Monitoring and troubleshooting slightly more complex</li>
+</ul>
+<h2 id="decision-rationale">Decision Rationale</h2>
+<p>The flat list configuration with tool name prefixing was chosen because:</p>
+<ol>
+<li><strong>Simplicity</strong>: Straightforward configuration and mental model</li>
+<li><strong>Compatibility</strong>: Zero breaking changes for existing users</li>
+<li><strong>Transparency</strong>: Works with any MCP client without modifications</li>
+<li><strong>Scalability</strong>: Efficient resource management and concurrent operations</li>
+<li><strong>Security</strong>: Maintains Gatekit's security-first approach</li>
+<li><strong>Maintainability</strong>: Clean code architecture that extends existing patterns</li>
+</ol>
+<p>This approach provides a solid foundation for multi-server support while preserving the simplicity and reliability that are core to Gatekit's design philosophy.</p>
+<h2 id="future-enhancements">Future Enhancements</h2>
+<ol>
+<li><strong>Dynamic Server Management</strong>: Runtime addition/removal of servers</li>
+<li><strong>Load Balancing</strong>: Distribute requests across multiple instances of the same server</li>
+<li><strong>Health Monitoring</strong>: Advanced health checks and automatic failover</li>
+<li><strong>Configuration Templating</strong>: Simplified configuration for common patterns</li>
+<li><strong>Tool Conflict Resolution</strong>: Strategies for handling duplicate tool names</li>
+</ol>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

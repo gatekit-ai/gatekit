@@ -1,0 +1,13 @@
+handler: audit_jsonl
+category: auditing
+description: >-
+  Balanced config capturing request bodies but trimming responses to keep log
+  sizes predictable.
+config:
+  enabled: true
+  critical: true
+  output_file: logs/audit.jsonl
+  include_request_body: true
+  include_response_body: false
+  include_notification_body: false
+  max_body_size: 4096

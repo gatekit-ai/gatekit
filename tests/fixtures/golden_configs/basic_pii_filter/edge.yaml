@@ -1,0 +1,22 @@
+handler: basic_pii_filter
+category: security
+description: >-
+  Aggressive blocking profile that runs first in the pipeline and enables every
+  built-in detector plus base64 scanning.
+config:
+  enabled: true
+  critical: true
+  priority: 0
+  action: block
+  pii_types:
+    email:
+      enabled: true
+    phone:
+      enabled: true
+    national_id:
+      enabled: true
+    credit_card:
+      enabled: true
+    ip_address:
+      enabled: true
+  scan_base64: true

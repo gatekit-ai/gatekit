@@ -1,0 +1,16 @@
+handler: basic_prompt_injection_defense
+category: security
+description: Standard deployment blocking delimiters and role manipulation.
+config:
+  enabled: true
+  critical: true
+  priority: 25
+  action: block
+  sensitivity: standard
+  detection_methods:
+    delimiter_injection:
+      enabled: true
+    role_manipulation:
+      enabled: true
+    context_hijacking:
+      enabled: false

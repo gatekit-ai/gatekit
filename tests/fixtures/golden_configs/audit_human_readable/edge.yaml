@@ -1,0 +1,7 @@
+handler: audit_human_readable
+category: auditing
+description: Disabled profile verifying schema defaults.
+config:
+  enabled: false
+  critical: true
+  output_file: logs/audit-disabled.log

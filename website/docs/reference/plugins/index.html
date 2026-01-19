@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Built-in Plugins - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit ships with plugins for common security, middleware, and auditing use cases. Use the TUI (`gatekit`) to configure plugins interactively, or see indivi...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="built-in-plugins">Built-in Plugins</h1>
+<p>Gatekit ships with plugins for common security, middleware, and auditing use cases. Use the TUI (<code>gatekit</code>) to configure plugins interactively, or see individual plugin pages for YAML configuration details.</p>
+<p>All built-in plugins follow the same interfaces as user plugins and receive no special treatment.</p>
+<h2 id="security-plugins">Security Plugins</h2>
+<p>Security plugins make allow/block decisions on MCP messages. They can detect and act on sensitive content.</p>
+<table>
+<thead>
+<tr>
+  <th>Plugin</th>
+  <th>Handler</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><a href="basic_pii_filter.html">Basic PII Filter</a></td>
+  <td><code>basic_pii_filter</code></td>
+  <td>Regex-based detection of emails, phone numbers, credit cards, IPs, and national IDs</td>
+</tr>
+<tr>
+  <td><a href="basic_secrets_filter.html">Basic Secrets Filter</a></td>
+  <td><code>basic_secrets_filter</code></td>
+  <td>Pattern-based detection of API keys, tokens, and high-entropy strings</td>
+</tr>
+<tr>
+  <td><a href="basic_prompt_injection_defense.html">Basic Prompt Injection Defense</a></td>
+  <td><code>basic_prompt_injection_defense</code></td>
+  <td>Regex-based detection of obvious prompt injection patterns</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Warning:</strong> The built-in security plugins provide basic protection only and are NOT suitable for production use. They can be bypassed with encoding or obfuscation. For production environments, implement enterprise-grade solutions.</p>
+</blockquote>
+<h2 id="middleware-plugins">Middleware Plugins</h2>
+<p>Middleware plugins can transform requests/responses or complete requests themselves.</p>
+<table>
+<thead>
+<tr>
+  <th>Plugin</th>
+  <th>Handler</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><a href="tool_manager.html">Tool Manager</a></td>
+  <td><code>tool_manager</code></td>
+  <td>Control which tools are visible to MCP clients; filter, rename, and modify descriptions</td>
+</tr>
+<tr>
+  <td><a href="call_trace.html">Call Trace</a></td>
+  <td><code>call_trace</code></td>
+  <td>Append diagnostic trace information to tool responses for debugging</td>
+</tr>
+</tbody>
+</table>
+<h2 id="auditing-plugins">Auditing Plugins</h2>
+<p>Auditing plugins observe MCP traffic and log it without affecting message flow.</p>
+<table>
+<thead>
+<tr>
+  <th>Plugin</th>
+  <th>Handler</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><a href="audit_jsonl.html">JSON Lines</a></td>
+  <td><code>audit_jsonl</code></td>
+  <td>Log MCP messages in JSON Lines format for log aggregation systems</td>
+</tr>
+<tr>
+  <td><a href="audit_csv.html">CSV</a></td>
+  <td><code>audit_csv</code></td>
+  <td>Log MCP messages in CSV format for spreadsheet analysis</td>
+</tr>
+<tr>
+  <td><a href="audit_human_readable.html">Human Readable</a></td>
+  <td><code>audit_human_readable</code></td>
+  <td>Log MCP messages in human-readable format for quick inspection</td>
+</tr>
+</tbody>
+</table>
+<h2 id="common-configuration">Common Configuration</h2>
+<p>All plugins support these framework-injected options:</p>
+<table>
+<thead>
+<tr>
+  <th>Option</th>
+  <th>Type</th>
+  <th>Default</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>enabled</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>Enable or disable the plugin</td>
+</tr>
+<tr>
+  <td><code>critical</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>If true, plugin failure blocks the request (fail-closed)</td>
+</tr>
+<tr>
+  <td><code>priority</code></td>
+  <td>integer</td>
+  <td><code>50</code></td>
+  <td>Execution order (0-100, lower runs first)</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_jsonl</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">    </span><span class="c1"># Don&#39;t block requests if logging fails</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">90</span><span class="w">       </span><span class="c1"># Run after security plugins</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.jsonl</span>
+</code></pre>
+<h2 id="writing-custom-plugins">Writing Custom Plugins</h2>
+<p>See the <a href="/docs/plugins/development-guide.html">Plugin Development Guide</a> for information on writing your own plugins.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

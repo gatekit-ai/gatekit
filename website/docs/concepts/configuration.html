@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gatekit Configuration Specification - Gatekit Documentation</title>
+  <meta name="description" content="proxy: transport: stdio upstreams:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../docs/getting-started.html">Get started</a>
+        <a href="../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html" class="active">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="gatekit-configuration-specification">Gatekit Configuration Specification</h1>
+<p><strong>Version</strong>: 0.1.0<br />
+<strong>Status</strong>: Authoritative Reference</p>
+<blockquote>
+<p><strong>Note</strong>: This document describes the ACTUAL configuration format as implemented. The Pydantic schemas in <a href="../gatekit/config/models.py"><code>gatekit/config/models.py</code></a> define the validation rules and accepted fields.</p>
+</blockquote>
+<blockquote>
+<p><strong>Tip</strong>: You don't need to edit configuration files by hand. Run <code>gatekit</code> to launch the guided setup and configuration editor.</p>
+</blockquote>
+<h2 id="quick-reference">Quick Reference</h2>
+<pre><code class="language-yaml"><span class="c1"># Minimal valid configuration</span>
+<span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
+<span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">example</span>
+<span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="c1"># Full configuration with all sections</span>
+<span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
+<span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">example</span>
+<span class="w">      </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span><span class="w">  </span><span class="c1"># Optional: inherits from proxy.transport</span>
+<span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">restart_on_failure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">max_restart_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">      </span><span class="nt">server_identity</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;optional-mcp-server-name&quot;</span>
+
+<span class="w">  </span><span class="nt">timeouts</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">connection_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+<span class="w">    </span><span class="nt">request_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+
+<span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span>
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit_jsonl&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit_audit.jsonl&quot;</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">example</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+
+<span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;INFO&quot;</span>
+<span class="w">  </span><span class="nt">handlers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;stderr&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit.log&quot;</span>
+<span class="w">  </span><span class="nt">max_file_size_mb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">  </span><span class="nt">backup_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</code></pre>
+<h2 id="top-level-structure">Top-Level Structure</h2>
+<h3 id="required-codeproxycode-section">Required: <code>proxy</code> Section</h3>
+<p>All Gatekit configurations must have a top-level <code>proxy</code> section:</p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;stdio&quot;</span><span class="w">  </span><span class="c1"># Required: &quot;stdio&quot; or &quot;http&quot;</span>
+<span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">...</span><span class="p p-Indicator">]</span><span class="w">    </span><span class="c1"># Required: List of upstream servers</span>
+<span class="w">  </span><span class="c1"># ... other optional sections</span>
+</code></pre>
+<p><strong>Common Mistake</strong>: Don't put <code>upstreams:</code> at the top level. It must be inside <code>proxy:</code>.</p>
+<p>❌ <strong>Wrong:</strong></p>
+<pre><code class="language-yaml"><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">example</span>
+</code></pre>
+<p>✅ <strong>Correct:</strong></p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">example</span>
+</code></pre>
+<h2 id="proxy-section-fields">Proxy Section Fields</h2>
+<h3 id="codetransportcode-required"><code>transport</code> (Required)</h3>
+<p><strong>Type</strong>: <code>string</code>
+<strong>Values</strong>: <code>&quot;stdio&quot;</code> or <code>&quot;http&quot;</code>
+<strong>Purpose</strong>: Defines how Gatekit communicates with MCP clients</p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;stdio&quot;</span><span class="w">  </span><span class="c1"># For Claude Desktop and most MCP clients</span>
+</code></pre>
+<h3 id="codeupstreamscode-required"><code>upstreams</code> (Required)</h3>
+<p><strong>Type</strong>: <code>list</code> of upstream configurations
+<strong>Minimum</strong>: At least one upstream required
+<strong>Purpose</strong>: Defines the MCP servers that Gatekit proxies to</p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span>
+<span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;github&quot;</span>
+<span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h4 id="upstream-configuration-fields">Upstream Configuration Fields</h4>
+<p>Each upstream server has these fields:</p>
+<table>
+<thead>
+<tr>
+  <th>Field</th>
+  <th>Type</th>
+  <th>Required</th>
+  <th>Default</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>name</code></td>
+  <td>string</td>
+  <td>✅ Yes</td>
+  <td>-</td>
+  <td>Unique server identifier</td>
+</tr>
+<tr>
+  <td><code>transport</code></td>
+  <td>string</td>
+  <td>No</td>
+  <td><code>&quot;stdio&quot;</code></td>
+  <td><code>&quot;stdio&quot;</code> or <code>&quot;http&quot;</code></td>
+</tr>
+<tr>
+  <td><code>command</code></td>
+  <td>list of strings</td>
+  <td>Conditional</td>
+  <td>-</td>
+  <td>Required for stdio transport</td>
+</tr>
+<tr>
+  <td><code>url</code></td>
+  <td>string</td>
+  <td>Conditional</td>
+  <td>-</td>
+  <td>Required for http transport</td>
+</tr>
+<tr>
+  <td><code>restart_on_failure</code></td>
+  <td>boolean</td>
+  <td>No</td>
+  <td><code>true</code></td>
+  <td>Auto-restart on failure</td>
+</tr>
+<tr>
+  <td><code>max_restart_attempts</code></td>
+  <td>integer</td>
+  <td>No</td>
+  <td><code>3</code></td>
+  <td>Max restart attempts</td>
+</tr>
+<tr>
+  <td><code>server_identity</code></td>
+  <td>string</td>
+  <td>No</td>
+  <td><code>null</code></td>
+  <td>MCP-reported server name</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Command Format:</strong></p>
+<pre><code class="language-yaml"><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;-y&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/tmp&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<p><strong>HTTP Transport Example:</strong></p>
+<pre><code class="language-yaml"><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;remote-server&quot;</span>
+<span class="w">    </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http&quot;</span>
+<span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://example.com/mcp&quot;</span>
+</code></pre>
+<h4 id="important-environment-variables">Important: Environment Variables</h4>
+<p><strong>Gatekit upstream configurations do NOT support <code>env</code> fields.</strong></p>
+<p>❌ <strong>Not Supported:</strong></p>
+<pre><code class="language-yaml"><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">env</span><span class="p">:</span><span class="w">  </span><span class="c1"># ❌ This field does not exist!</span>
+<span class="w">      </span><span class="nt">GITHUB_TOKEN</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;ghp_xxx&quot;</span>
+</code></pre>
+<p><strong>Rationale</strong>: Environment variables are an MCP client concern, not a gateway concern. Set them in your MCP client configuration (e.g., Claude Desktop's <code>claude_desktop_config.json</code>) or in your shell environment before launching Gatekit.</p>
+<h3 id="codetimeoutscode-optional"><code>timeouts</code> (Optional)</h3>
+<p><strong>Type</strong>: object
+<strong>Purpose</strong>: Configure connection and request timeouts</p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">timeouts</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">connection_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">  </span><span class="c1"># seconds</span>
+<span class="w">    </span><span class="nt">request_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span><span class="w">     </span><span class="c1"># seconds</span>
+</code></pre>
+<p><strong>Defaults</strong>: Both default to 60 seconds</p>
+<h3 id="codehttpcode-conditional"><code>http</code> (Conditional)</h3>
+<p><strong>Type</strong>: object
+<strong>Required</strong>: Only when <code>transport: &quot;http&quot;</code>
+<strong>Purpose</strong>: Configure HTTP server settings</p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http&quot;</span>
+<span class="w">  </span><span class="nt">http</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;127.0.0.1&quot;</span>
+<span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8080</span>
+</code></pre>
+<h3 id="codepluginscode-optional"><code>plugins</code> (Optional)</h3>
+<p><strong>Section</strong>: Top-level <code>plugins</code> (optional, sibling to <code>proxy</code>)
+<strong>Purpose</strong>: Configure security, auditing, and middleware plugins</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nv">...</span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nv">...</span><span class="p p-Indicator">}</span>
+</code></pre>
+<p><strong>Note</strong>: <code>plugins</code> is a root-level section, NOT nested under <code>proxy</code>. See <a href="#plugin-configuration">Plugin Configuration</a> section below.</p>
+<h2 id="plugin-configuration">Plugin Configuration</h2>
+<p>Plugins use an <strong>upstream-scoped dictionary format</strong> with special <code>_global</code> key:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span><span class="w">              </span><span class="c1"># Applies to all upstreams</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span>
+<span class="w">    </span><span class="nt">filesystem</span><span class="p">:</span><span class="w">           </span><span class="c1"># Applies only to &#39;filesystem&#39; upstream</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;block&quot;</span><span class="w">  </span><span class="c1"># Overrides global setting</span>
+</code></pre>
+<h3 id="plugin-categories">Plugin Categories</h3>
+<ol>
+<li><strong><code>security</code></strong>: Plugins that block/allow/modify content (PII filter, secrets filter, tool allowlist)</li>
+<li><strong><code>auditing</code></strong>: Plugins that observe and log events (JSON, CSV, human-readable)</li>
+<li><strong><code>middleware</code></strong>: Plugins that transform or complete requests (tool manager)</li>
+</ol>
+<h3 id="plugin-configuration-structure">Plugin Configuration Structure</h3>
+<p>Each plugin entry has:</p>
+<pre><code class="language-yaml"><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;plugin_name&quot;</span><span class="w">  </span><span class="c1"># Required: Handler name</span>
+<span class="w">  </span><span class="nt">config</span><span class="p">:</span><span class="w">                 </span><span class="c1"># Optional: Plugin-specific configuration</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">         </span><span class="c1"># Optional: Default true</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span><span class="w">          </span><span class="c1"># Optional: 0-100, lower = higher priority</span>
+<span class="w">    </span><span class="c1"># ... plugin-specific fields</span>
+</code></pre>
+<h3 id="special-keys">Special Keys</h3>
+<ul>
+<li><strong><code>_global</code></strong>: Applies to all upstream servers</li>
+<li><strong>Upstream names</strong>: Must match names in <code>proxy.upstreams</code></li>
+<li><strong><code>_*</code> keys</strong>: Other underscore-prefixed keys are ignored (useful for YAML anchors)</li>
+</ul>
+<h3 id="plugin-resolution-algorithm">Plugin Resolution Algorithm</h3>
+<p>For each upstream server:</p>
+<ol>
+<li>Start with plugins from <code>_global</code> section</li>
+<li>Add/override with plugins from server-specific section</li>
+<li>Merge by handler name (same handler = override, different handler = add)</li>
+<li>Sort by priority (lower number = higher priority)</li>
+</ol>
+<p><strong>Example:</strong></p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span><span class="p p-Indicator">}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_secrets_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span><span class="p p-Indicator">}</span>
+<span class="w">    </span><span class="nt">production</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;block&quot;</span><span class="p p-Indicator">}</span><span class="w">  </span><span class="c1"># Override global</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">    </span><span class="c1"># Add new plugin</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;read_file&quot;</span><span class="p p-Indicator">]}</span>
+
+<span class="c1"># Result for &#39;production&#39; upstream:</span>
+<span class="c1"># 1. basic_pii_filter with action: &quot;block&quot; (overridden)</span>
+<span class="c1"># 2. basic_secrets_filter with action: &quot;redact&quot; (from global)</span>
+<span class="c1"># 3. tool_manager with specified tools (added)</span>
+</code></pre>
+<h3 id="plugin-scope-validation">Plugin Scope Validation</h3>
+<p>Plugins declare their scope via class attributes:</p>
+<ul>
+<li><strong><code>global</code> scope</strong>: Can be configured in <code>_global</code> or server sections</li>
+<li><strong><code>server_aware</code> scope</strong>: CANNOT be in <code>_global</code>, requires per-server config</li>
+<li><strong><code>server_specific</code> scope</strong>: CANNOT be in <code>_global</code>, only works with compatible servers</li>
+</ul>
+<p>❌ <strong>Invalid Configuration:</strong></p>
+<pre><code class="language-yaml"><span class="nt">security</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">  </span><span class="c1"># ❌ Server-aware plugin in global section</span>
+</code></pre>
+<p>✅ <strong>Valid Configuration:</strong></p>
+<pre><code class="language-yaml"><span class="nt">security</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">filesystem</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">  </span><span class="c1"># ✅ Server-aware plugin in server section</span>
+<span class="w">      </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;read_file&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h2 id="logging-configuration">Logging Configuration</h2>
+<p><strong>Section</strong>: Top-level <code>logging</code> (optional)
+<strong>Purpose</strong>: Configure Gatekit system logs (not audit logs)</p>
+<pre><code class="language-yaml"><span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;INFO&quot;</span><span class="w">                    </span><span class="c1"># DEBUG, INFO, WARNING, ERROR, CRITICAL</span>
+<span class="w">  </span><span class="nt">handlers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;stderr&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;file&quot;</span><span class="p p-Indicator">]</span><span class="w">     </span><span class="c1"># stderr, file, or both</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit.log&quot;</span><span class="w">  </span><span class="c1"># Required if handlers includes &quot;file&quot;</span>
+<span class="w">  </span><span class="nt">max_file_size_mb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">            </span><span class="c1"># File rotation size</span>
+<span class="w">  </span><span class="nt">backup_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span><span class="w">                 </span><span class="c1"># Number of backup files</span>
+<span class="w">  </span><span class="nt">format</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;%(asctime)s</span><span class="nv"> </span><span class="s">[%(levelname)s]</span><span class="nv"> </span><span class="s">%(name)s:</span><span class="nv"> </span><span class="s">%(message)s&quot;</span>
+<span class="w">  </span><span class="nt">date_format</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;%Y-%m-%d</span><span class="nv"> </span><span class="s">%H:%M:%S&quot;</span>
+</code></pre>
+<h3 id="log-handlers">Log Handlers</h3>
+<ul>
+<li><strong><code>stderr</code></strong>: Output to console (not supported on Windsurf/Windows - see <a href="known-issues.html">known issues</a>)</li>
+<li><strong><code>file</code></strong>: Output to file (requires <code>file_path</code>) - <strong>default for guided setup</strong></li>
+<li>Can specify both: <code>[&quot;stderr&quot;, &quot;file&quot;]</code></li>
+</ul>
+<h3 id="path-resolution">Path Resolution</h3>
+<ul>
+<li>Relative paths are resolved relative to the config file directory</li>
+<li>Absolute paths are used as-is</li>
+<li>Home directory expansion (<code>~</code>) is supported</li>
+</ul>
+<h2 id="validation-rules">Validation Rules</h2>
+<h3 id="server-names">Server Names</h3>
+<ul>
+<li>Must be unique across all upstreams</li>
+<li>Cannot contain <code>__</code> (reserved as namespace delimiter)</li>
+<li>Must match pattern: <code>^[a-z][a-z0-9_-]*$</code></li>
+</ul>
+<h3 id="plugin-references">Plugin References</h3>
+<ul>
+<li>Plugin upstream keys must match upstream server names</li>
+<li><code>_global</code> is a special reserved key</li>
+<li>Unknown upstream names in plugin config will cause validation error</li>
+</ul>
+<h3 id="required-fields">Required Fields</h3>
+<p>Validation enforces:</p>
+<ul>
+<li><code>proxy.transport</code> is required</li>
+<li><code>proxy.upstreams</code> must have at least one entry</li>
+<li>Each upstream must have a <code>name</code></li>
+<li>stdio transport requires <code>command</code></li>
+<li>http transport requires <code>url</code></li>
+<li>http transport requires <code>proxy.http</code> section</li>
+</ul>
+<h2 id="complete-working-example">Complete Working Example</h2>
+<p>The following example shows a complete working configuration with inline comments.</p>
+<pre><code class="language-yaml"><span class="c1"># Complete example configuration</span>
+<span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
+
+<span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span>
+<span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/Users/user/Documents&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">restart_on_failure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">max_restart_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">      </span><span class="nt">server_identity</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;secure-filesystem-server&quot;</span>
+
+<span class="w">  </span><span class="nt">timeouts</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">connection_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+<span class="w">    </span><span class="nt">request_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+
+<span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_pii_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;redact&quot;</span>
+<span class="w">          </span><span class="nt">pii_types</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">email</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+<span class="w">            </span><span class="nt">phone</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+<span class="w">            </span><span class="nt">national_id</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;basic_secrets_filter&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;block&quot;</span>
+<span class="w">          </span><span class="nt">secret_types</span><span class="p">:</span>
+<span class="w">            </span><span class="nt">aws_access_keys</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+<span class="w">            </span><span class="nt">github_tokens</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="p p-Indicator">}</span>
+
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">filesystem</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span>
+
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;audit_jsonl&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit_audit.jsonl&quot;</span>
+<span class="w">          </span><span class="nt">include_request_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">include_response_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">          </span><span class="nt">include_notification_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">          </span><span class="nt">max_body_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span>
+<span class="w">          </span><span class="c1"># critical: true is the default - uncomment below for development</span>
+<span class="w">          </span><span class="c1"># critical: false</span>
+
+<span class="nt">logging</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;INFO&quot;</span>
+<span class="w">  </span><span class="nt">handlers</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;stderr&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;file&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">file_path</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/gatekit.log&quot;</span>
+<span class="w">  </span><span class="nt">max_file_size_mb</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+<span class="w">  </span><span class="nt">backup_count</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+</code></pre>
+<h2 id="common-mistakes">Common Mistakes</h2>
+<h3 id="1-missing-codeproxycode-wrapper">1. Missing <code>proxy</code> wrapper</h3>
+<p>❌ <strong>Wrong:</strong></p>
+<pre><code class="language-yaml"><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
+<span class="nt">upstreams</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">...</span><span class="p p-Indicator">]</span>
+</code></pre>
+<p>✅ <strong>Correct:</strong></p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
+<span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">...</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h3 id="2-adding-codeenvcode-to-upstream-config">2. Adding <code>env</code> to upstream config</h3>
+<p>❌ <strong>Wrong:</strong></p>
+<pre><code class="language-yaml"><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github</span>
+<span class="w">    </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-github&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">env</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">GITHUB_TOKEN</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;xxx&quot;</span>
+</code></pre>
+<p>✅ <strong>Correct:</strong>
+Set environment variables in your shell or MCP client config, not in Gatekit config.</p>
+<h3 id="3-server-aware-plugins-in-code_globalcode">3. Server-aware plugins in <code>_global</code></h3>
+<p>❌ <strong>Wrong:</strong></p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span><span class="w">  </span><span class="c1"># Needs per-server config</span>
+</code></pre>
+<p>✅ <strong>Correct:</strong></p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">middleware</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">filesystem</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;read_file&quot;</span><span class="p p-Indicator">]</span>
+</code></pre>
+<h3 id="4-plugin-handler-vs-policy-naming">4. Plugin handler vs policy naming</h3>
+<p>❌ <strong>Wrong (outdated):</strong></p>
+<pre><code class="language-yaml"><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">policy</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_allowlist&quot;</span>
+</code></pre>
+<p>✅ <strong>Correct (current):</strong></p>
+<pre><code class="language-yaml"><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+</code></pre>
+<h2 id="related-documentation">Related Documentation</h2>
+<ul>
+<li><strong>Implementation</strong>: <a href="../gatekit/config/models.py"><code>gatekit/config/models.py</code></a> - Pydantic schemas (source of truth)</li>
+<li><strong>Loader</strong>: <a href="../gatekit/config/loader.py"><code>gatekit/config/loader.py</code></a> - Configuration loading logic</li>
+<li><strong>Test Examples</strong>: <a href="../tests/validation/"><code>tests/validation/</code></a> - Test configurations</li>
+<li><strong>Architecture</strong>: <a href="decision-records/005-configuration-management.html"><code>docs/decision-records/005-configuration-management.md</code></a> - Design decisions</li>
+<li><strong>Plugin Structure</strong>: <a href="decision-records/007-plugin-configuration-structure.html"><code>docs/decision-records/007-plugin-configuration-structure.md</code></a> - Plugin config evolution</li>
+</ul>
+<h2 id="version-history">Version History</h2>
+<ul>
+<li><strong>0.1.0</strong>: Current specification</li>
+<li><strong>0.1.0</strong>: Initial release with handler-based plugin system</li>
+</ul>
+<hr />
+<p><strong>When in doubt</strong>: Refer to the Pydantic schemas in <code>gatekit/config/models.py</code>. The schemas define the validation rules and are the authoritative source of truth for what fields are accepted and how they are validated.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

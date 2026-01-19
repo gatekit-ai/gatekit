@@ -1,0 +1,30 @@
+handler: basic_secrets_filter
+category: security
+description: >-
+  Aggressive redaction profile enabling every built-in detector and entropy
+  detection with low threshold.
+config:
+  enabled: true
+  critical: true
+  priority: 5
+  action: redact
+  secret_types:
+    aws_access_keys:
+      enabled: true
+    github_tokens:
+      enabled: true
+    google_api_keys:
+      enabled: true
+    jwt_tokens:
+      enabled: true
+    slack_tokens:
+      enabled: true
+    ssh_private_keys:
+      enabled: true
+    private_keys:
+      enabled: true
+  entropy_detection:
+    enabled: true
+    threshold: 4.0
+    min_length: 12
+  scan_base64: true

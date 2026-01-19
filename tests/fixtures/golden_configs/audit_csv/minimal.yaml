@@ -1,0 +1,13 @@
+handler: audit_csv
+category: auditing
+description: Minimal CSV logging with defaults.
+config:
+  enabled: true
+  critical: true
+  output_file: logs/audit.csv
+  csv_config:
+    delimiter: ","
+    quote_char: '"'
+    quote_style: minimal
+    escape_char: "\\"
+    null_value: ''

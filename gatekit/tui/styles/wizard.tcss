@@ -1,0 +1,147 @@
+/* Shared wizard screen styles for guided setup flow
+ *
+ * These styles provide consistent look and feel across all wizard screens:
+ * - ServerSelectionScreen
+ * - ClientSelectionScreen
+ * - ClientSetupScreen
+ * - SetupCompleteScreen
+ *
+ * Usage:
+ *   1. Import in screen Python file:
+ *      from pathlib import Path
+ *      WIZARD_CSS_PATH = Path(__file__).resolve().parent.parent.parent / "styles" / "wizard.tcss"
+ *      SHARED_WIZARD_CSS = WIZARD_CSS_PATH.read_text()
+ *
+ *   2. Add to CSS property:
+ *      CSS = SHARED_WIZARD_CSS + """screen-specific styles"""
+ *
+ *   3. Add wizard-screen class to Container in compose():
+ *      with Container(classes="container wizard-screen"):
+ */
+
+/* Screen centering */
+.wizard-screen {
+    align: center middle;
+}
+
+/* Main container box - centered with border */
+.wizard-screen .container {
+    width: 95%;
+    height: 90%;
+    background: $background;
+    border: heavy $primary;
+    padding: 1 3 1 3;
+}
+
+/* Content scroll area */
+.wizard-screen #content_scroll {
+    width: 100%;
+    height: 1fr;
+}
+
+/* Screen title (centered, bold, accent color) */
+.wizard-screen .screen-title {
+    text-align: center;
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 1;
+    height: auto;
+}
+
+/* Section titles */
+.wizard-screen .section-title {
+    text-style: bold;
+    color: $text;
+    margin-top: 2;
+    margin-bottom: 1;
+    height: auto;
+}
+
+/* Description text */
+.wizard-screen .description {
+    color: $text-muted;
+    margin-bottom: 1;
+    height: auto;
+}
+
+/* Screen-level description (more spacing) */
+.wizard-screen .screen-description {
+    color: $text-muted;
+    margin-bottom: 2;
+    height: auto;
+}
+
+/* Summary text */
+.wizard-screen .summary {
+    text-style: bold;
+    color: $accent;
+    margin-bottom: 2;
+    height: auto;
+}
+
+/* Info boxes - used for informational messages with title + content */
+.wizard-screen .info-box {
+    background: $panel;
+    border: solid $primary;
+    padding: 1 2 0 2;
+    margin-bottom: 1;
+    height: auto;
+}
+
+.wizard-screen .info-box-title {
+    text-style: bold;
+    color: $text;
+    margin-bottom: 1;
+    height: auto;
+}
+
+.wizard-screen .info-box-content {
+    color: $text-muted;
+    height: auto;
+}
+
+/* Button layout (wizard pattern: Back ... Primary) */
+.wizard-screen .buttons {
+    height: auto;
+    margin-top: 1;
+    padding-top: 1;
+    border-top: solid $primary;
+}
+
+.wizard-screen .buttons Button {
+    margin: 0 1;
+}
+
+/* Spacer to push buttons apart (Back on left, Primary on right) */
+.wizard-screen .button-spacer {
+    width: 1fr;
+    height: auto;
+}
+
+/* Utility class to hide elements */
+.wizard-screen .hidden {
+    display: none;
+}
+
+/* DataTables in wizard screens */
+.wizard-screen DataTable {
+    height: auto;
+    max-height: 12;
+    margin-bottom: 1;
+}
+
+/* Path display row (used for config path and restore path) */
+.wizard-screen .path-row {
+    height: auto;
+    align: left middle;
+    margin-bottom: 1;
+}
+
+/* Path display text (accent color, bold) */
+.wizard-screen .path-display {
+    color: $accent;
+    text-style: bold;
+    width: auto;
+    height: auto;
+    content-align: left middle;
+}

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-022: Unified PluginResult for Plugin Processing - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit's plugin architecture originally used two separate result types:">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-022-unified-pluginresult-for-plugin-processing">ADR-022: Unified PluginResult for Plugin Processing</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit's plugin architecture originally used two separate result types:</p>
+<ul>
+<li><code>SecurityResult</code> for security plugin decisions (allowed/denied with reason)</li>
+<li><code>MiddlewareResult</code> for middleware transformations (modified content, completed responses)</li>
+</ul>
+<p>This dual-result system created several critical problems:</p>
+<h3 id="1-semantic-incorrectness">1. Semantic Incorrectness</h3>
+<p>When only middleware plugins were configured (no security plugins), the plugin manager would return:</p>
+<pre><code class="language-python"><span class="n">SecurityResult</span><span class="p">(</span><span class="n">allowed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Allowed by all security plugins&quot;</span><span class="p">)</span>
+</code></pre>
+<p>This was fundamentally wrong - no security plugins had even executed. The system was lying about what happened.</p>
+<h3 id="2-type-complexity">2. Type Complexity</h3>
+<p>The codebase carried <code>Union[SecurityResult, MiddlewareResult]</code> throughout, leading to:</p>
+<ul>
+<li>Constant <code>isinstance()</code> checks polluting the code</li>
+<li>Confusion about which type to expect in different contexts</li>
+<li>Complex type annotations reducing readability</li>
+<li>Difficulty in extending the system with new result types</li>
+</ul>
+<h3 id="3-lost-processing-history">3. Lost Processing History</h3>
+<p>The current approach only preserved the last plugin's contribution:</p>
+<ul>
+<li>Each plugin's reason replaced the previous one</li>
+<li>No visibility into what each plugin in the pipeline did</li>
+<li>Modifications weren't tracked with attribution</li>
+<li>Debugging complex plugin interactions was difficult</li>
+</ul>
+<h3 id="4-inconsistent-accumulation">4. Inconsistent Accumulation</h3>
+<p>Different aspects of results were handled inconsistently:</p>
+<ul>
+<li>Metadata was merged (good)</li>
+<li>Reasons were replaced (bad)</li>
+<li>Modifications were replaced (bad)</li>
+<li>No record of which plugins ran or in what order</li>
+</ul>
+<h2 id="decision">Decision</h2>
+<p>We will replace the dual SecurityResult/MiddlewareResult system with a single unified <code>PluginResult</code> class that all plugins return, while maintaining the plugin type distinction for organizational clarity.</p>
+<h3 id="core-design">Core Design</h3>
+<ol>
+<li><p><strong>Single Result Type</strong>: All plugins return <code>PluginResult</code> with optional security decision field.</p>
+</li>
+<li><p><strong>Plugin Type Distinction Remains</strong>: <code>SecurityPlugin</code> and <code>MiddlewarePlugin</code> classes stay separate for semantic clarity and contract enforcement.</p>
+</li>
+<li><p><strong>Security Contract Enforcement</strong>: SecurityPlugin base class ensures <code>allowed</code> field is set.</p>
+</li>
+<li><p><strong>Gradual Migration Path</strong>: Support both old and new types during transition.</p>
+</li>
+</ol>
+<p>The key design elements:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PluginResult</span><span class="p">:</span>
+    <span class="c1"># Security decision (None if no security decision made)</span>
+    <span class="n">allowed</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    
+    <span class="c1"># Content transformations</span>
+    <span class="n">modified_content</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">MCPRequest</span><span class="p">,</span> <span class="n">MCPResponse</span><span class="p">,</span> <span class="n">MCPNotification</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">completed_response</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">MCPResponse</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    
+    <span class="c1"># Processing information</span>
+    <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+</code></pre>
+<h3 id="why-maintain-plugin-types">Why Maintain Plugin Types?</h3>
+<p>While all plugins return the same result type, different plugin classes serve important purposes:</p>
+<ol>
+<li><strong>Human Understanding</strong>: Categories match mental models (&quot;security protects&quot;, &quot;middleware transforms&quot;)</li>
+<li><strong>Contract Enforcement</strong>: Security plugins MUST decide, middleware MAY transform</li>
+<li><strong>Configuration Organization</strong>: Clear YAML sections for different concerns</li>
+<li><strong>Documentation Structure</strong>: Meaningful groupings for users</li>
+</ol>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ol>
+<li><p><strong>Semantic Correctness</strong>: Middleware-only pipelines return results with <code>allowed=None</code>, accurately indicating no security decision was made.</p>
+</li>
+<li><p><strong>Simplified Type System</strong>: No more <code>Union[SecurityResult, MiddlewareResult]</code> throughout the codebase.</p>
+</li>
+<li><p><strong>Clean Plugin Interface</strong>: Plugins return a simple, consistent result type.</p>
+</li>
+<li><p><strong>Contract Enforcement</strong>: SecurityPlugin base class ensures security plugins set the <code>allowed</code> field.</p>
+</li>
+<li><p><strong>Extensibility</strong>: Easy to add new fields to PluginResult without breaking existing code.</p>
+</li>
+<li><p><strong>Gradual Migration</strong>: Can migrate from Union types incrementally without breaking existing code.</p>
+</li>
+</ol>
+<h3 id="negative">Negative</h3>
+<ol>
+<li><p><strong>Migration Effort</strong>: All plugins must be updated to return PluginResult.</p>
+</li>
+<li><p><strong>Temporary Complexity</strong>: Supporting both old and new types during migration adds temporary complexity.</p>
+</li>
+<li><p><strong>Breaking Change</strong>: Eventually not backward compatible with existing plugin implementations.</p>
+</li>
+</ol>
+<h3 id="neutral">Neutral</h3>
+<ol>
+<li><p><strong>Learning Curve</strong>: Developers need to understand that all plugins return the same type.</p>
+</li>
+<li><p><strong>Test Updates</strong>: Tests need updating to work with new result type.</p>
+</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="1-keep-dual-system-with-better-logic">1. Keep Dual System with Better Logic</h3>
+<p>Fix the semantic incorrectness while keeping two result types. Rejected because:</p>
+<ul>
+<li>Doesn't solve the Union type complexity</li>
+<li>Maintains artificial distinction between result types</li>
+<li>More isinstance() checks throughout codebase</li>
+</ul>
+<h3 id="2-each-plugin-returns-pipelineresult">2. Each Plugin Returns PipelineResult</h3>
+<p>Have plugins return a &quot;PipelineResult&quot; that accumulates history. Rejected because:</p>
+<ul>
+<li>Semantically confusing (why does one plugin return pipeline result?)</li>
+<li>Over-couples plugins to pipeline architecture</li>
+<li>Makes plugin interface more complex</li>
+</ul>
+<h3 id="3-complete-unification-no-plugin-types">3. Complete Unification (No Plugin Types)</h3>
+<p>Single Plugin class that can do everything. Rejected because:</p>
+<ul>
+<li>Loses semantic clarity for humans</li>
+<li>Can't enforce contracts (security must decide)</li>
+<li>Configuration becomes less intuitive</li>
+<li>Documentation harder to organize</li>
+</ul>
+<h2 id="implementation">Implementation</h2>
+<p>The implementation includes:</p>
+<ol>
+<li>Adding PluginResult class alongside existing types</li>
+<li>Updating plugin base classes to support both types during transition</li>
+<li>Gradually migrating all plugins to return PluginResult</li>
+<li>Updating plugin manager to handle single type</li>
+<li>Removing deprecated SecurityResult/MiddlewareResult types</li>
+<li>Comprehensive test updates</li>
+</ol>
+<h2 id="migration-strategy">Migration Strategy</h2>
+<h3 id="phase-1-parallel-support">Phase 1: Parallel Support</h3>
+<ul>
+<li>Add PluginResult alongside existing types</li>
+<li>Base classes accept both return types</li>
+<li>Manager handles Union during transition</li>
+<li>Gradual plugin migration</li>
+</ul>
+<h3 id="phase-2-complete-migration">Phase 2: Complete Migration</h3>
+<ul>
+<li>All plugins use PluginResult</li>
+<li>Remove old result types</li>
+<li>Simplify manager code</li>
+<li>Update all tests</li>
+</ul>
+<h3 id="future-enhancement-pipelineresult-container">Future Enhancement: PipelineResult Container</h3>
+<p>A future enhancement could add a PipelineResult container that accumulates all individual PluginResults for complete processing history:</p>
+<pre><code class="language-python"><span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PipelineResult</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Container for all plugin results from pipeline&quot;&quot;&quot;</span>
+    <span class="n">plugin_results</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">PluginResult</span><span class="p">]]</span>
+    
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">allowed</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+        <span class="c1"># Compute from contained results</span>
+</code></pre>
+<p>This would provide full observability but is not required for the initial implementation.</p>
+<h2 id="notes">Notes</h2>
+<p>This change represents a pragmatic balance between technical simplicity and organizational clarity:</p>
+<ul>
+<li><strong>Technical Reality</strong>: All plugins are message processors returning similar results</li>
+<li><strong>Human Organization</strong>: Different plugin types help with mental models and configuration</li>
+<li><strong>Contract Enforcement</strong>: Base classes ensure security plugins make decisions</li>
+<li><strong>Migration Path</strong>: Gradual transition from Union types to single type</li>
+</ul>
+<p>The distinction between plugin types is &quot;a useful fiction&quot; - technically unnecessary but organizationally valuable, similar to frontend/backend distinctions in web development.</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

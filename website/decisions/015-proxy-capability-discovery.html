@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-015: Proxy-Based Capability Discovery - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit operates as a transparent proxy between MCP clients and servers. A key question arose about how to handle capability discovery: should Gatekit proact...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-015-proxy-based-capability-discovery">ADR-015: Proxy-Based Capability Discovery</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit operates as a transparent proxy between MCP clients and servers. A key question arose about how to handle capability discovery: should Gatekit proactively discover server capabilities during connection, or should it operate purely as a pass-through proxy that only responds to client-initiated requests?</p>
+<h2 id="decision">Decision</h2>
+<p><strong>Gatekit does NOT perform proactive capability discovery. Instead, it operates as a transparent proxy that broadcasts capability requests from clients to servers.</strong></p>
+<h3 id="key-principles">Key Principles:</h3>
+<ol>
+<li><p><strong>Transparent Proxy Operation</strong>: Gatekit forwards client requests to appropriate servers without modification, except for security filtering and auditing.</p>
+</li>
+<li><p><strong>Client-Driven Discovery</strong>: Capabilities are only discovered when clients explicitly request them via:</p>
+<ul>
+<li><code>initialize</code> requests (broadcast to all servers)</li>
+<li><code>tools/list</code> requests (broadcast to all servers, results aggregated)</li>
+<li><code>resources/list</code> requests (broadcast to all servers, results aggregated)</li>
+<li><code>prompts/list</code> requests (broadcast to all servers, results aggregated)</li>
+</ul>
+</li>
+<li><p><strong>Broadcast Aggregation</strong>: For multi-server configurations, Gatekit:</p>
+<ul>
+<li>Broadcasts <code>*/list</code> requests to all connected servers</li>
+<li>Aggregates responses from all servers</li>
+<li>Adds server name prefixes to avoid naming conflicts (<code>server__tool_name</code>)</li>
+<li>Returns unified response to client</li>
+</ul>
+</li>
+<li><p><strong>Optional Caching</strong>: Gatekit MAY cache capability responses for performance and monitoring purposes, but this caching is:</p>
+<ul>
+<li>Purely opportunistic (populated only after client requests)</li>
+<li>Used for administrative/monitoring purposes</li>
+<li>Never used to modify proxy behavior</li>
+</ul>
+</li>
+</ol>
+<h2 id="implementation">Implementation</h2>
+<h3 id="server-connection-process">Server Connection Process</h3>
+<p>During server connection, Gatekit only:</p>
+<ol>
+<li>Establishes transport connection</li>
+<li>Sends <code>initialize</code> request to verify connectivity</li>
+<li>Marks server as connected</li>
+<li><strong>Does NOT</strong> send <code>tools/list</code>, <code>resources/list</code>, or <code>prompts/list</code> requests</li>
+</ol>
+<h3 id="client-request-handling">Client Request Handling</h3>
+<p>When clients send capability discovery requests:</p>
+<ol>
+<li><code>initialize</code> → Broadcast to all servers, return aggregated response</li>
+<li><code>tools/list</code> → Broadcast to all servers, aggregate tool lists with namespacing</li>
+<li><code>resources/list</code> → Broadcast to all servers, aggregate resource lists with namespacing</li>
+<li><code>prompts/list</code> → Broadcast to all servers, aggregate prompt lists with namespacing</li>
+</ol>
+<h3 id="server-namespacing">Server Namespacing</h3>
+<p>For all server configurations:</p>
+<ul>
+<li>Tools: <code>server_name__tool_name</code></li>
+<li>Resources: <code>server_name__resource_uri</code></li>
+<li>Prompts: <code>server_name__prompt_name</code></li>
+</ul>
+<p>Namespacing is applied consistently regardless of the number of configured servers.</p>
+<h2 id="rationale">Rationale</h2>
+<h3 id="why-not-proactive-discovery">Why NOT Proactive Discovery?</h3>
+<ol>
+<li><p><strong>Proxy Semantics</strong>: Gatekit is a proxy, not an MCP client. Proactive discovery would blur this distinction and potentially interfere with client-server interactions.</p>
+</li>
+<li><p><strong>Performance</strong>: Capability discovery adds latency to server connections. Many use cases may not need immediate capability information.</p>
+</li>
+<li><p><strong>Client Control</strong>: Clients should control when and how they discover capabilities, not have this imposed by the proxy.</p>
+</li>
+<li><p><strong>Error Handling</strong>: Failed capability discovery during connection could unnecessarily prevent server connections that might otherwise work.</p>
+</li>
+<li><p><strong>Protocol Compliance</strong>: The MCP protocol doesn't require proxies to perform capability discovery.</p>
+</li>
+</ol>
+<h3 id="why-broadcast-approach">Why Broadcast Approach?</h3>
+<ol>
+<li><p><strong>Transparency</strong>: Client sees the same interface whether connecting directly to servers or through Gatekit.</p>
+</li>
+<li><p><strong>Unified Experience</strong>: Multi-server setups appear as a single, unified MCP server to clients.</p>
+</li>
+<li><p><strong>Namespace Management</strong>: Gatekit can resolve naming conflicts between servers automatically.</p>
+</li>
+<li><p><strong>Filtering Integration</strong>: Security plugins can filter capabilities just like any other MCP communication.</p>
+</li>
+</ol>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li>Simple, predictable proxy behavior</li>
+<li>No connection-time capability discovery overhead</li>
+<li>Full client control over discovery timing</li>
+<li>Easy to understand and debug</li>
+<li>Consistent with proxy architectural patterns</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li>Capabilities not immediately available after server connection</li>
+<li>Administrative interfaces may show empty capabilities until first client request</li>
+<li>Slight complexity in broadcast aggregation logic</li>
+</ul>
+<h2 id="compliance">Compliance</h2>
+<p>This decision aligns with:</p>
+<ul>
+<li>MCP Protocol Specification (proxies are not required to be MCP clients)</li>
+<li>Standard proxy architectural patterns</li>
+<li>Gatekit's design principle of transparent operation</li>
+</ul>
+<h2 id="future-considerations">Future Considerations</h2>
+<ul>
+<li>Administrative endpoints may implement separate capability discovery for monitoring</li>
+<li>Caching strategies could be enhanced for performance</li>
+<li>Health check endpoints might trigger capability refresh independently</li>
+</ul>
+<h2 id="related-adrs">Related ADRs</h2>
+<ul>
+<li>ADR-001: Transport Layer Selection</li>
+<li>ADR-002: Asynchronous Architecture</li>
+<li>ADR-010: Response Filtering and Modification</li>
+<li>ADR-011: Concurrent Request Handling</li>
+<li>ADR-014: Multi-Server Support</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

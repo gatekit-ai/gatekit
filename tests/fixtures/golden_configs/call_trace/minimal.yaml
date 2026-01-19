@@ -1,0 +1,16 @@
+handler: call_trace
+category: middleware
+description: Baseline config keeping defaults for every trace field.
+config:
+  enabled: true
+  critical: true
+  priority: 40
+  max_param_length: 200
+  trace_fields:
+    server: true
+    tool: true
+    params: true
+    response_size: true
+    duration: true
+    request_id: true
+    timestamp: true

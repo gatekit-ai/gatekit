@@ -1,0 +1,136 @@
+[project]
+name = "gatekit"
+dynamic = ["version"]
+description = "A hackable Model Context Protocol (MCP) gateway"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Doug Bright"},
+]
+keywords = ["mcp", "model-context-protocol", "llm", "gateway", "proxy", "tui", "terminal", "audit-logging"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Security",
+]
+
+dependencies = [
+    "pyyaml==6.0.2",
+    "aiohttp==3.12.4",
+    "pydantic==2.11.5",
+    "pathspec==0.12.1",
+    "textual~=7.2.0",
+    "jsonschema~=4.25.0",
+    "textual-fspicker==0.6.0",
+    "tomli~=2.2.0; python_version < '3.11'",
+    "anyio~=4.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.0.290",
+    "mypy>=1.5",
+]
+
+[project.scripts]
+gatekit = "gatekit.main:tui_main"
+gatekit-gateway = "gatekit.main:gateway_main"
+
+[project.urls]
+Repository = "https://github.com/gatekit-ai/gatekit"
+Documentation = "https://github.com/gatekit-ai/gatekit/tree/main/docs"
+"Bug Tracker" = "https://github.com/gatekit-ai/gatekit/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "gatekit/_version.py"
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "jc>=1.25.5",
+    "mypy>=1.16.0",
+    "pandas>=2.3.1",
+    "pycef>=1.11",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=1.0.0",
+    "pytest-cov>=6.1.1",
+    "pytest-xdist>=3.6.1",
+    "ruff>=0.11.12",
+]
+
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "real_server: marks tests that use real MCP servers (deselect with '-m \"not real_server\"')",
+    "platform_specific: marks tests that only run on specific platforms (auto-filtered during collection)",
+    "slow: marks tests as slow (skipped by default, run with --run-slow)",
+    "smoke: marks CLI smoke tests that boot the gateway subprocess (implies slow)",
+    "windows_only: marks tests that only run on Windows (auto-filtered on other platforms)",
+    "posix_only: marks tests that only run on POSIX systems (auto-filtered on Windows)",
+]
+testpaths = [
+    "tests",
+]
+filterwarnings = [
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]
+
+[tool.ruff]
+# Line length set to 120 for better code readability
+line-length = 120
+
+# Target Python 3.10+
+target-version = "py310"
+
+# Exclude future-work directory from linting
+exclude = [
+    "future-work/",
+]
+
+[tool.ruff.lint]
+# Enable specific rules to enforce better exception handling
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "B",      # flake8-bugbear
+    "S110",   # try-except-pass without logging
+    "E722",   # bare except - CRITICAL: prevents except: clauses
+    "TRY",    # tryceratops - exception handling antipatterns
+]
+
+# Ignore specific rules where needed
+ignore = [
+    "E501",   # Line too long - modern development accepts 120-150 char lines for readability (v0.1.0)
+    "TRY002", # Allow generic Exception class with descriptive messages (v0.1.0)
+    "TRY003", # Avoid specifying long messages outside exception class
+    "TRY300", # Consider moving statements to else block - style preference (v0.1.0)
+    "TRY301", # Raise within try - acceptable pattern for validation (v0.1.0)
+    "TRY401", # Redundant exception object in logging.exception() - style preference (v0.1.0)
+    "B904",   # Allow raise without from in except blocks (v0.1.0)
+]
+
+# Allow bare except in tests where we're testing exception handling
+# Allow try-except-pass in TUI for defensive widget queries
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E722", "S110", "TRY002"]
+"tests/**/*" = ["E722", "S110", "TRY002"]
+"gatekit/tui/*" = ["S110"]
+"gatekit/tui/**/*" = ["S110"]

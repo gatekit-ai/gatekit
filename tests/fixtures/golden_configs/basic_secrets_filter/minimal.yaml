@@ -1,0 +1,14 @@
+handler: basic_secrets_filter
+category: security
+description: Disabled baseline verifying defaults for secret types and entropy detection.
+config:
+  enabled: false
+  critical: true
+  priority: 50
+  action: block
+  secret_types: {}
+  entropy_detection:
+    enabled: false
+    threshold: 4.5
+    min_length: 20
+  scan_base64: false

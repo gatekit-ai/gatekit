@@ -1,0 +1,22 @@
+/* Field error messages */
+.field-error {
+    color: $error;
+    font-size: 0.85em;
+    margin-top: 0.25;
+    margin-bottom: 0.5;
+}
+
+/* Invalid field highlighting */
+Input.invalid {
+    border: solid $error;
+}
+
+Select.invalid {
+    border: solid $error;
+}
+
+/* Required field indicator */
+Label.required::after {
+    content: " *";
+    color: $error;
+}

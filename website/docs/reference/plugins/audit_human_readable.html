@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Human Readable Auditing - Gatekit Documentation</title>
+  <meta name="description" content="Log MCP requests, responses, and notifications in human-readable format for quick visual inspection and monitoring.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="human-readable-auditing">Human Readable Auditing</h1>
+<p>Log MCP requests, responses, and notifications in human-readable format for quick visual inspection and monitoring.</p>
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Handler</td>
+  <td><code>audit_human_readable</code></td>
+</tr>
+<tr>
+  <td>Type</td>
+  <td>Auditing</td>
+</tr>
+<tr>
+  <td>Scope</td>
+  <td>Global (can be configured globally or per-server)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-it-works">How It Works</h2>
+<p>The human-readable auditing plugin:</p>
+<ol>
+<li>Formats each MCP event as a single line for easy log scanning</li>
+<li>Uses human-readable timestamps (YYYY-MM-DD HH:MM:SS UTC)</li>
+<li>Shows method, tool name, server, and pipeline outcome on each line</li>
+<li>Designed for <code>tail -f</code> monitoring and quick debugging</li>
+</ol>
+<h2 id="configuration-reference">Configuration Reference</h2>
+<h3 id="output_file">output_file</h3>
+<p>Path to the log file. Supports <code>~</code> for home directory.</p>
+<p><strong>Type:</strong> string
+<strong>Default:</strong> <code>logs/gatekit_audit.log</code>
+<strong>Required:</strong> Yes</p>
+<blockquote>
+<p><strong>Note:</strong> Relative paths are resolved relative to the config file's directory.</p>
+</blockquote>
+<h2 id="yaml-configuration">YAML Configuration</h2>
+<h3 id="minimal-configuration">Minimal Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_human_readable</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.log</span>
+</code></pre>
+<h3 id="full-configuration">Full Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_human_readable</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">           </span><span class="c1"># Don&#39;t block requests if logging fails</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.log</span>
+</code></pre>
+<h3 id="console-output-for-debugging">Console Output (for debugging)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_human_readable</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/dev/stdout</span><span class="w">  </span><span class="c1"># Write to console</span>
+</code></pre>
+<h2 id="example-output">Example Output</h2>
+<p>Each event is logged on a single line for easy scanning with <code>tail -f</code> and log analysis tools:</p>
+<pre><code class="language-text"><span class="mf">2025</span><span class="o">-</span><span class="mf">01</span><span class="o">-</span><span class="mf">12</span><span class="w"> </span><span class="mf">15</span><span class="p">:</span><span class="mf">30</span><span class="p">:</span><span class="mf">45</span><span class="w"> </span><span class="n">UTC</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">REQUEST</span><span class="p">:</span><span class="w"> </span><span class="kr">to</span><span class="n">ols</span><span class="o">/</span><span class="n">call</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="kr">read</span><span class="n">_file</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">filesystem</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">ALLOWED</span>
+<span class="mf">2025</span><span class="o">-</span><span class="mf">01</span><span class="o">-</span><span class="mf">12</span><span class="w"> </span><span class="mf">15</span><span class="p">:</span><span class="mf">30</span><span class="p">:</span><span class="mf">45</span><span class="w"> </span><span class="n">UTC</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">RESPONSE</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">filesystem</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">success</span><span class="w"> </span><span class="p">(</span><span class="mf">0.045</span><span class="n">s</span><span class="p">)</span>
+<span class="mf">2025</span><span class="o">-</span><span class="mf">01</span><span class="o">-</span><span class="mf">12</span><span class="w"> </span><span class="mf">15</span><span class="p">:</span><span class="mf">30</span><span class="p">:</span><span class="mf">46</span><span class="w"> </span><span class="n">UTC</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">REQUEST</span><span class="p">:</span><span class="w"> </span><span class="kr">to</span><span class="n">ols</span><span class="o">/</span><span class="n">call</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">write_file</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">filesystem</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">BLOCKED</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">Secret</span><span class="w"> </span><span class="n">detected</span><span class="p">:</span><span class="w"> </span><span class="mf">1</span><span class="w"> </span><span class="n">secret</span><span class="p">(</span><span class="n">s</span><span class="p">)</span><span class="w"> </span><span class="n">found</span>
+<span class="mf">2025</span><span class="o">-</span><span class="mf">01</span><span class="o">-</span><span class="mf">12</span><span class="w"> </span><span class="mf">15</span><span class="p">:</span><span class="mf">30</span><span class="p">:</span><span class="mf">47</span><span class="w"> </span><span class="n">UTC</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="ow">NOT</span><span class="kr">IF</span><span class="n">ICATION</span><span class="p">:</span><span class="w"> </span><span class="err">$</span><span class="o">/</span><span class="n">progress</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">filesystem</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">NO_SECURITY</span>
+</code></pre>
+<h2 id="use-cases">Use Cases</h2>
+<h3 id="real-time-monitoring">Real-Time Monitoring</h3>
+<pre><code class="language-bash">tail<span class="w"> </span>-f<span class="w"> </span>logs/audit.log
+</code></pre>
+<h3 id="quick-debugging">Quick Debugging</h3>
+<p>Human-readable format makes it easy to understand what's happening without parsing JSON.</p>
+<h3 id="development">Development</h3>
+<p>See MCP traffic in a readable format while developing plugins or debugging issues.</p>
+<h2 id="when-to-use">When to Use</h2>
+<table>
+<thead>
+<tr>
+  <th>Format</th>
+  <th>Best For</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Human Readable</td>
+  <td>Quick debugging, real-time monitoring, development</td>
+</tr>
+<tr>
+  <td>JSON Lines</td>
+  <td>Log aggregation, automated analysis, long-term storage</td>
+</tr>
+<tr>
+  <td>CSV</td>
+  <td>Spreadsheet analysis, simple reporting</td>
+</tr>
+</tbody>
+</table>
+<h2 id="multiple-log-formats">Multiple Log Formats</h2>
+<p>You can run multiple auditing plugins simultaneously:</p>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="c1"># Human-readable for quick debugging</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_human_readable</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.log</span>
+
+<span class="w">  </span><span class="c1"># JSON for log aggregation</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audit_jsonl</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/audit.jsonl</span>
+<span class="w">    </span><span class="nt">include_response_body</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h2 id="limitations">Limitations</h2>
+<ul>
+<li><strong>No message bodies</strong> - Human-readable format doesn't include request/response bodies. Use JSON Lines for full body logging.</li>
+<li><strong>Not machine-parseable</strong> - Use JSON Lines or CSV for automated analysis.</li>
+<li><strong>No configurable format</strong> - The output format is fixed. For custom formats, consider writing a custom plugin.</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

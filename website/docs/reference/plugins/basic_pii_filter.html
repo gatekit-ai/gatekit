@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Basic PII Filter - Gatekit Documentation</title>
+  <meta name="description" content="Detect and filter personally identifiable information (PII) using regex-based pattern matching.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="basic-pii-filter">Basic PII Filter</h1>
+<p>Detect and filter personally identifiable information (PII) using regex-based pattern matching.</p>
+<blockquote>
+<p><strong>Warning:</strong> This plugin provides basic protection only and is NOT suitable for production use. Regex-based detection can be bypassed with encoding, obfuscation, or novel formats. For production environments, use enterprise-grade PII detection solutions like Microsoft Presidio.</p>
+</blockquote>
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Handler</td>
+  <td><code>basic_pii_filter</code></td>
+</tr>
+<tr>
+  <td>Type</td>
+  <td>Security</td>
+</tr>
+<tr>
+  <td>Scope</td>
+  <td>Global (can be configured globally or per-server)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="detected-pii-types">Detected PII Types</h2>
+<table>
+<thead>
+<tr>
+  <th>Type</th>
+  <th>Description</th>
+  <th>Example Patterns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>email</code></td>
+  <td>RFC 5322 compliant email addresses</td>
+  <td><code>user@example.com</code></td>
+</tr>
+<tr>
+  <td><code>phone</code></td>
+  <td>US phone numbers only</td>
+  <td><code>(555) 123-4567</code>, <code>555-123-4567</code>, <code>555.123.4567</code></td>
+</tr>
+<tr>
+  <td><code>credit_card</code></td>
+  <td>Major card brands with Luhn validation</td>
+  <td>Visa, MasterCard, Amex, Discover</td>
+</tr>
+<tr>
+  <td><code>ip_address</code></td>
+  <td>IPv4 and IPv6 addresses</td>
+  <td><code>192.168.1.1</code>, <code>2001:db8::1</code></td>
+</tr>
+<tr>
+  <td><code>national_id</code></td>
+  <td>US SSN, UK NI, Canadian SIN</td>
+  <td><code>123-45-6789</code> (formatted only)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="configuration-reference">Configuration Reference</h2>
+<h3 id="action">action</h3>
+<p>What to do when PII is detected.</p>
+<table>
+<thead>
+<tr>
+  <th>Value</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>block</code></td>
+  <td>Reject the request/response entirely</td>
+</tr>
+<tr>
+  <td><code>redact</code></td>
+  <td>Replace PII with <code>[TYPE REDACTED by Gatekit]</code> placeholders</td>
+</tr>
+<tr>
+  <td><code>audit_only</code></td>
+  <td>Log detection but allow through unchanged</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Default:</strong> <code>redact</code></p>
+<h3 id="pii_types">pii_types</h3>
+<p>Configure which PII types to detect. Each type has an <code>enabled</code> boolean.</p>
+<p><strong>Default:</strong> All types enabled</p>
+<h3 id="scan_base64">scan_base64</h3>
+<p>Decode and scan base64-encoded content for PII.</p>
+<p><strong>Default:</strong> <code>false</code></p>
+<blockquote>
+<p><strong>Note:</strong> Base64 content cannot be safely redacted (would corrupt data). When <code>scan_base64</code> is enabled and PII is found in base64 content, the plugin forces blocking even if <code>action</code> is set to <code>redact</code>.</p>
+</blockquote>
+<h2 id="yaml-configuration">YAML Configuration</h2>
+<h3 id="minimal-configuration">Minimal Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic_pii_filter</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h3 id="full-configuration">Full Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic_pii_filter</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">              </span><span class="c1"># Run early in pipeline</span>
+<span class="w">    </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">            </span><span class="c1"># Block requests if plugin fails</span>
+
+<span class="w">    </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redact</span><span class="w">            </span><span class="c1"># block | redact | audit_only</span>
+<span class="w">    </span><span class="nt">scan_base64</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">        </span><span class="c1"># Decode and scan base64 content</span>
+
+<span class="w">    </span><span class="nt">pii_types</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">email</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">phone</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">credit_card</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">ip_address</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">national_id</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre>
+<h3 id="production-example-block-mode">Production Example (Block Mode)</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">basic_pii_filter</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">priority</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5</span>
+<span class="w">    </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">block</span><span class="w">             </span><span class="c1"># Reject any content with PII</span>
+<span class="w">    </span><span class="nt">scan_base64</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">         </span><span class="c1"># Also check encoded content</span>
+<span class="w">    </span><span class="nt">pii_types</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">email</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">credit_card</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">national_id</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">phone</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">        </span><span class="c1"># Too many false positives for our use case</span>
+<span class="w">      </span><span class="nt">ip_address</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">        </span><span class="c1"># We legitimately work with IPs</span>
+</code></pre>
+<h2 id="limitations">Limitations</h2>
+<p>This plugin will NOT detect:</p>
+<ul>
+<li><strong>Context-dependent PII</strong> - Names, addresses without clear patterns</li>
+<li><strong>Obfuscated or encoded PII</strong> - ROT13, custom encoding schemes</li>
+<li><strong>Novel or region-specific formats</strong> - Non-US phone numbers, other countries' IDs</li>
+<li><strong>PII split across multiple fields</strong> - First name in one field, last name in another</li>
+<li><strong>Unformatted SSNs</strong> - <code>123456789</code> without dashes (too many false positives)</li>
+</ul>
+<h2 id="redaction-format">Redaction Format</h2>
+<p>When <code>action: redact</code>, detected PII is replaced with:</p>
+<pre><code class="language-text"><span class="k">[EMAIL REDACTED by Gatekit]</span>
+<span class="k">[PHONE REDACTED by Gatekit]</span>
+<span class="k">[CREDIT_CARD REDACTED by Gatekit]</span>
+<span class="k">[IP_ADDRESS REDACTED by Gatekit]</span>
+<span class="k">[NATIONAL_ID REDACTED by Gatekit]</span>
+</code></pre>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

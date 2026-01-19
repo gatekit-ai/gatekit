@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-001: Transport Layer Architecture - Gatekit Documentation</title>
+  <meta name="description" content="Gatekit needs to communicate with MCP servers using different transport mechanisms. The MCP protocol supports multiple transports (stdio, SSE/HTTP, WebSocket...">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-001-transport-layer-architecture">ADR-001: Transport Layer Architecture</h1>
+<h2 id="context">Context</h2>
+<p>Gatekit needs to communicate with MCP servers using different transport mechanisms. The MCP protocol supports multiple transports (stdio, SSE/HTTP, WebSocket), and we need a flexible architecture that:</p>
+<ol>
+<li>Supports multiple transport types without duplicating protocol logic</li>
+<li>Allows easy addition of new transports in the future</li>
+<li>Maintains clean separation between transport concerns and protocol concerns</li>
+<li>Provides consistent error handling across all transports</li>
+</ol>
+<h2 id="decision">Decision</h2>
+<p>We will implement an abstract <code>Transport</code> interface with concrete implementations for each transport type:</p>
+<pre><code class="language-python"><span class="c1"># Abstract base class (simplified view - see gatekit/transport/base.py for full interface)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Transport</span><span class="p">(</span><span class="n">ABC</span><span class="p">):</span>
+    <span class="nd">@abstractmethod</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">send_message</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">:</span> <span class="n">MCPRequest</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">receive_message</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MCPResponse</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="nd">@abstractmethod</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">disconnect</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+
+    <span class="c1"># Additional methods in actual implementation:</span>
+    <span class="c1"># - send_notification(), get_next_notification() for MCP notifications</span>
+    <span class="c1"># - send_and_receive() for request/response correlation (ADR-013)</span>
+    <span class="c1"># - is_connected() for connection state checking</span>
+
+<span class="c1"># Concrete implementations</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">StdioTransport</span><span class="p">(</span><span class="n">Transport</span><span class="p">):</span> <span class="o">...</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">HttpTransport</span><span class="p">(</span><span class="n">Transport</span><span class="p">):</span> <span class="o">...</span>  <span class="c1"># Future</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WebSocketTransport</span><span class="p">(</span><span class="n">Transport</span><span class="p">):</span> <span class="o">...</span>  <span class="c1"># Future</span>
+</code></pre>
+<h3 id="key-design-principles">Key Design Principles</h3>
+<ol>
+<li><strong>Transport Abstraction</strong>: Protocol logic is transport-agnostic</li>
+<li><strong>Async-First</strong>: All transport operations are asynchronous</li>
+<li><strong>Clean Interface</strong>: Core contract with connect/send_message/receive_message/disconnect operations</li>
+<li><strong>Error Propagation</strong>: Transport errors bubble up as specific exceptions (see <code>gatekit/transport/errors.py</code>)</li>
+<li><strong>Resource Management</strong>: Proper cleanup through async context managers</li>
+<li><strong>Request Correlation</strong>: Support for concurrent request handling via <code>send_and_receive()</code> (see ADR-013)</li>
+</ol>
+<h2 id="alternatives-considered">Alternatives Considered</h2>
+<h3 id="alternative-1-transport-specific-protocol-handlers">Alternative 1: Transport-Specific Protocol Handlers</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">StdioProtocolHandler</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">handle_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span> <span class="o">...</span>
+    
+<span class="k">class</span><span class="w"> </span><span class="nc">HttpProtocolHandler</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">handle_request</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span> <span class="o">...</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Simple, direct implementation</li>
+<li><strong>Cons</strong>: Code duplication, harder to maintain protocol consistency</li>
+</ul>
+<h3 id="alternative-2-single-transport-class-with-type-parameter">Alternative 2: Single Transport Class with Type Parameter</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">Transport</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">transport_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span> <span class="o">...</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Single class to maintain</li>
+<li><strong>Cons</strong>: Complex internal branching, violates single responsibility</li>
+</ul>
+<h3 id="alternative-3-plugin-based-architecture">Alternative 3: Plugin-Based Architecture</h3>
+<pre><code class="language-python"><span class="k">class</span><span class="w"> </span><span class="nc">TransportRegistry</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">register_transport</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">transport_class</span><span class="p">):</span> <span class="o">...</span>
+</code></pre>
+<ul>
+<li><strong>Pros</strong>: Maximum flexibility, runtime registration</li>
+<li><strong>Cons</strong>: Over-engineering for current needs, more complex</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li>Clean separation of concerns between transport and protocol layers</li>
+<li>Easy to add new transport types (HTTP, WebSocket, etc.)</li>
+<li>Consistent error handling across all transports</li>
+<li>Testable transport implementations in isolation</li>
+<li>Type-safe interfaces with proper async support</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li>Additional abstraction layer adds some complexity</li>
+<li>Need to maintain consistency across multiple implementations</li>
+<li>Slightly more code than monolithic approach</li>
+</ul>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<p>Current implementation includes:</p>
+<ul>
+<li><code>gatekit/transport/base.py</code>: Abstract <code>Transport</code> interface with 8 abstract methods</li>
+<li><code>gatekit/transport/stdio.py</code>: Stdio transport implementation with request correlation</li>
+<li><code>gatekit/transport/errors.py</code>: Transport-specific error hierarchy</li>
+<li>Comprehensive test coverage for both abstract interface and concrete implementation</li>
+<li>Integration tests validating transport behavior</li>
+</ul>
+<p>Future transports (HTTP, WebSocket) will follow the same pattern, implementing the <code>Transport</code> interface while handling transport-specific details internally.</p>
+<h2 id="review">Review</h2>
+<p>This decision will be reviewed when:</p>
+<ul>
+<li>Adding the second transport implementation (HTTP or WebSocket)</li>
+<li>Performance requirements change significantly</li>
+<li>MCP protocol transport requirements evolve</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>
