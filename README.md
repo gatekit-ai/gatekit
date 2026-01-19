@@ -3,6 +3,7 @@
 [![Open Source](https://img.shields.io/badge/Open%20Source-Apache%202.0-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/gatekit-ai/gatekit/releases)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://python.org)
+[![Docs](https://img.shields.io/badge/docs-gatekit.ai-blue.svg)](https://gatekit.ai)
 
 **A hackable MCP gateway.**
 
