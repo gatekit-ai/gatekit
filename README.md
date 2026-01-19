@@ -166,6 +166,7 @@ See the [plugin development guide](docs/plugin-development-guide.md) for details
 
 ## Documentation
 
+- [Full Documentation](https://gatekit.ai) - Guides, tutorials, and reference
 - [Getting Started](docs/getting-started.md) - Installation, quick start, and tutorials
 - [Configuration Specification](docs/configuration-specification.md)
 - [Plugin Development Guide](docs/plugin-development-guide.md)
