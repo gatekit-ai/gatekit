@@ -16,7 +16,7 @@ Built-in plugins handle:
 - **Content security** — catch PII and secrets before they leave your machine, defend against basic prompt injection attacks (regex-based)
 - **Audit logging** — debug failures, track usage, inspect full request and response bodies
 
-<img src="docs/images/gatekit-config-editor.png" width="800" alt="Gatekit configuration editor">
+<img src="https://raw.githubusercontent.com/gatekit-ai/gatekit/main/docs/images/gatekit-config-editor.png" width="800" alt="Gatekit configuration editor">
 
 *Gatekit configuration editor (Terminal UI)*
 
@@ -53,7 +53,7 @@ The TUI includes a guided setup wizard that:
 4. **Provides** client-specific setup instructions with copy buttons
 5. **Creates** restore scripts in case you want to revert
 
-<img src="docs/images/guided-setup-wizard.png" width="800" alt="Guided setup wizard showing server discovery">
+<img src="https://raw.githubusercontent.com/gatekit-ai/gatekit/main/docs/images/guided-setup-wizard.png" width="800" alt="Guided setup wizard showing server discovery">
 
 ### Manual Configuration
 
@@ -122,7 +122,7 @@ Gatekit proxies traffic between Model Context Protocol (MCP) clients and servers
 - **Tool Manager** - Filter, rename, and customize tool descriptions
 - **Call Trace** - Append diagnostic info to tool responses
 
-<img src="docs/images/tool-manager-modal.png" width="600" alt="Tool Manager configuration modal">
+<img src="https://raw.githubusercontent.com/gatekit-ai/gatekit/main/docs/images/tool-manager-modal.png" width="600" alt="Tool Manager configuration modal">
 
 ### Security
 
@@ -165,7 +165,7 @@ See the [plugin development guide](docs/plugin-development-guide.md) for details
 
 ## Documentation
 
-- [Tutorial: Managing Tools](docs/tutorial-managing-tools.md) - Filter, rename, and customize tool descriptions
+- [Getting Started](docs/getting-started.md) - Installation, quick start, and tutorials
 - [Configuration Specification](docs/configuration-specification.md)
 - [Plugin Development Guide](docs/plugin-development-guide.md)
 - [Security Model](docs/security-model.md)
