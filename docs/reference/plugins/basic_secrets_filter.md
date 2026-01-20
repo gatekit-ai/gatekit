@@ -55,6 +55,15 @@ Detect high-entropy strings that may be secrets even without matching known patt
 | `threshold` | number | `5.0` | Minimum Shannon entropy to flag (4.0-5.0, higher = fewer false positives) |
 | `min_length` | integer | `20` | Minimum string length to analyze |
 
+> **Warning: High False Positive Rate at Low Thresholds**
+>
+> Entropy detection produces significant false positives at thresholds below 4.8. In testing:
+> - At 4.0: Blocks/redacts nearly all content including simple messages
+> - At 4.5: Still catches legitimate request metadata and UUIDs
+> - At 5.0 (default): Most conservative, fewest false positives
+>
+> **Recommendation:** Start with the default threshold of 5.0 and only lower it if you need to catch more potential secrets and can tolerate the increased false positive rate. Consider using `action: audit_only` first to evaluate the impact before enabling blocking or redaction.
+
 > **Note:** Entropy detection is disabled by default due to false positives. When enabled, it can catch unknown secret formats but may flag legitimate high-entropy data like UUIDs or encoded file content.
 
 ### scan_base64

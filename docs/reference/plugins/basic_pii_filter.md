@@ -22,6 +22,8 @@ Detect and filter personally identifiable information (PII) using regex-based pa
 | `ip_address` | IPv4 and IPv6 addresses | `192.168.1.1`, `2001:db8::1` |
 | `national_id` | US SSN, UK NI, Canadian SIN | `123-45-6789` (formatted only) |
 
+> **Credit card Luhn validation:** Only credit card numbers that pass the [Luhn checksum](https://en.wikipedia.org/wiki/Luhn_algorithm) are detected. Numbers that look like credit cards but fail validation (e.g., test numbers, typos) will not be flagged.
+
 ## Configuration Reference
 
 ### action

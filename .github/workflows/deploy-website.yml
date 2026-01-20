@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.repository == 'gatekit-ai/gatekit'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

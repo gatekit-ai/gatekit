@@ -181,7 +181,7 @@ class BasicSecretsFilterPlugin(SecurityPlugin):
                         },
                         "threshold": {
                             "type": "number",
-                            "description": "Minimum entropy to flag. Higher = fewer false positives. Range: 4.0-5.0",
+                            "description": "Minimum entropy to flag. Higher = fewer false positives. Range: 4.0-5.0. Values below 5.0 are likely to produce false positives on typical MCP traffic.",
                             "default": 5.0,
                             "minimum": 4.0,
                             "maximum": 5.0,

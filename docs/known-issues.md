@@ -63,3 +63,34 @@ minimum-contrast = 1
 - [Ghostty Discussion #6083 - minimum-contrast muting colors](https://github.com/ghostty-org/ghostty/discussions/6083)
 
 **Status**: This is a terminal-specific rendering behavior. The workaround above resolves most issues. Future Gatekit releases may add Ghostty-specific detection and styling adjustments.
+
+## Plugin Configuration
+
+### Server-Specific Plugin Override Not Working
+
+**Issue**: Setting `enabled: false` on a server-specific plugin configuration does not override a globally-enabled plugin. The global plugin still applies to that server.
+
+**Example**:
+```yaml
+proxy:
+  _global:
+    plugins:
+      - handler: prompt_injection
+        enabled: true
+        config:
+          action: redact
+
+  servers:
+    everything:
+      plugins:
+        - handler: prompt_injection
+          enabled: false  # Expected to disable for this server, but doesn't
+```
+
+**Expected Behavior**: Server-specific `enabled: false` should override the global plugin, effectively exempting that server from the global plugin's scope.
+
+**Actual Behavior**: The global plugin continues to apply to the server regardless of the server-specific `enabled: false` setting.
+
+**Workaround**: Instead of enabling globally and disabling for specific servers, disable the plugin globally and explicitly enable it on each server where you want it applied.
+
+**Status**: Under investigation. This affects all server-aware plugins where server-specific configuration is intended to override global settings.

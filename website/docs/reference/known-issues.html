@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../../css/style.css">
+  <script defer src="https://api.pirsch.io/pa.js" id="pianjs" data-code="GUYxLQ7LGQThWCqSrzrtg2qOOArCNKPS"></script>
 </head>
 <body>
   <header class="site-header">
@@ -113,6 +114,28 @@
 <li><a href="https://github.com/ghostty-org/ghostty/discussions/6083">Ghostty Discussion #6083 - minimum-contrast muting colors</a></li>
 </ul>
 <p><strong>Status</strong>: This is a terminal-specific rendering behavior. The workaround above resolves most issues. Future Gatekit releases may add Ghostty-specific detection and styling adjustments.</p>
+<h2 id="plugin-configuration">Plugin Configuration</h2>
+<h3 id="server-specific-plugin-override-not-working">Server-Specific Plugin Override Not Working</h3>
+<p><strong>Issue</strong>: Setting <code>enabled: false</code> on a server-specific plugin configuration does not override a globally-enabled plugin. The global plugin still applies to that server.</p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-yaml"><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt_injection</span>
+<span class="w">        </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">redact</span>
+
+<span class="w">  </span><span class="nt">servers</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">everything</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">prompt_injection</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># Expected to disable for this server, but doesn&#39;t</span>
+</code></pre>
+<p><strong>Expected Behavior</strong>: Server-specific <code>enabled: false</code> should override the global plugin, effectively exempting that server from the global plugin's scope.</p>
+<p><strong>Actual Behavior</strong>: The global plugin continues to apply to the server regardless of the server-specific <code>enabled: false</code> setting.</p>
+<p><strong>Workaround</strong>: Instead of enabling globally and disabling for specific servers, disable the plugin globally and explicitly enable it on each server where you want it applied.</p>
+<p><strong>Status</strong>: Under investigation. This affects all server-aware plugins where server-specific configuration is intended to override global settings.</p>
 
     </main>
   </div>
