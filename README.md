@@ -9,7 +9,9 @@
 
 Gatekit is a Model Context Protocol gateway that controls traffic between your LLM and MCP tools for better visibility, security, and control.
 
-**Extend it with plugins, not forks.** Your customizations stay separate, so you can keep getting Gatekit updates without merge conflicts.
+It ships with plugins for tool management, content security, and audit logging.
+
+Need custom behavior? **Extend with plugins, not forks.** Your customizations stay separate, so you can keep getting Gatekit updates without merge conflicts.
 
 Built-in plugins handle:
 
