@@ -3,9 +3,56 @@
 from typing import Optional, Dict, List, Any
 from textual.widgets import ListView, Button
 
+from gatekit.tui.widgets.server_list import (
+    ServerListWidget,
+    ServerNameStatic,
+    DynamicColumnCell,
+    ColumnContextMenu,
+)
+from gatekit.tui.widgets.ascii_checkbox import ASCIICheckbox
+
 
 class NavigationMixin:
     """Mixin providing navigation functionality for ConfigEditorScreen."""
+
+    # Actions that should not consume keys when an overlay is focused,
+    # allowing the overlay widget to handle them natively.
+    _OVERLAY_BLOCKED_ACTIONS = frozenset({
+        "navigate_down",
+        "navigate_up",
+        "navigate_left",
+        "navigate_right",
+        "navigate_next",
+        "navigate_previous",
+        "quit",
+    })
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Disable navigation bindings when an overlay (e.g. context menu) has focus.
+
+        Returning False prevents the priority binding from consuming the key
+        event, allowing it to propagate to the focused widget.
+        """
+        if action in self._OVERLAY_BLOCKED_ACTIONS and self._is_overlay_focused():
+            return False
+        return True
+
+    def _is_overlay_focused(self) -> bool:
+        """Check if an overlay widget (e.g. context menu) has focus.
+
+        When overlays are focused, navigation actions should not intercept
+        keys so the overlay can handle them natively.
+        """
+        focused = self.app.focused
+        if focused is None:
+            return False
+        # Walk up the DOM tree to check for overlay ancestors
+        node = focused
+        while node is not None:
+            if isinstance(node, ColumnContextMenu):
+                return True
+            node = getattr(node, "parent", None)
+        return False
 
     def _setup_navigation_containers(self) -> None:
         """Set up the navigation container order and their target widgets."""
@@ -190,6 +237,7 @@ class NavigationMixin:
 
     def action_navigate_down(self) -> None:
         """Navigate down within current panel (same column) or move to next container at boundaries."""
+
         from ...debug import get_debug_logger
 
         logger = get_debug_logger()
@@ -206,19 +254,23 @@ class NavigationMixin:
                 action="navigate_down",
                 focused_widget_id=getattr(focused_widget, "id", None),
             )
-        # If ListView focused, pass-through to its cursor movement; handle only boundaries
+
+        # Handle ServerListWidget navigation (checkbox or name within servers_list)
+        if self._is_in_servers_list(focused_widget):
+            if not self._navigate_servers_list_vertical(focused_widget, direction="down"):
+                return  # At boundary, don't navigate further
+            return
+
+        # Legacy ListView support (for other ListViews if any)
         if isinstance(focused_widget, ListView):
-            if focused_widget.id == "servers_list":
-                # If at bottom, block navigation (don't wrap to top)
-                list_items = list(focused_widget.children)
-                current_index = getattr(focused_widget, "index", None)
-                if (
-                    list_items
-                    and current_index is not None
-                    and current_index >= len(list_items) - 1
-                ):
-                    return
-            # Pass-through to widget for normal movement
+            list_items = list(focused_widget.children)
+            current_index = getattr(focused_widget, "index", None)
+            if (
+                list_items
+                and current_index is not None
+                and current_index >= len(list_items) - 1
+            ):
+                return
             try:
                 focused_widget.action_cursor_down()
             except Exception:
@@ -265,11 +317,12 @@ class NavigationMixin:
                                 pass
                             # Fallback to servers_list if Add button not available
                             try:
-                                servers_list = self.query_one("#servers_list", ListView)
-                                servers_list.focus()
-                                if getattr(servers_list, "children", None):
-                                    # List contains only server items; select first
-                                    servers_list.index = 0
+                                servers_list = self.query_one(
+                                    "#servers_list", ServerListWidget
+                                )
+                                names = servers_list.get_all_server_names()
+                                if names:
+                                    servers_list.focus_server_name(names[0])
                                 return
                             except Exception:
                                 pass
@@ -305,11 +358,11 @@ class NavigationMixin:
                                 # Fallback to servers_list if Add button not available
                                 try:
                                     servers_list = self.query_one(
-                                        "#servers_list", ListView
+                                        "#servers_list", ServerListWidget
                                     )
-                                    servers_list.focus()
-                                    if getattr(servers_list, "children", None):
-                                        servers_list.index = 0
+                                    names = servers_list.get_all_server_names()
+                                    if names:
+                                        servers_list.focus_server_name(names[0])
                                     if logger:
                                         logger.log_event(
                                             "NAV_GLOBAL_PLUGINS_TO_SERVERS_LIST",
@@ -488,21 +541,22 @@ class NavigationMixin:
             if hasattr(focused_widget, "id") and focused_widget.id == "add_server":
                 # Check if there are servers - if not, block navigation (at bottom)
                 try:
-                    servers_list = self.query_one("#servers_list", ListView)
-                    list_items = list(servers_list.children) if servers_list else []
-                    if not list_items:
+                    servers_list = self.query_one(
+                        "#servers_list", ServerListWidget
+                    )
+                    names = servers_list.get_all_server_names()
+                    if not names:
                         # No servers - Add button is at bottom, block navigation
                         return
-                    # There are servers, navigate to servers list
-                    servers_list.focus()
-                    servers_list.index = 0
+                    # There are servers, navigate to first server name
+                    servers_list.focus_server_name(names[0])
                     if logger:
                         logger.log_event(
                             "NAV_ADD_BUTTON_TO_SERVERS_LIST",
                             screen=self,
                             context={
                                 "from_widget": "add_server",
-                                "to_widget": "servers_list",
+                                "to_widget": f"server_name_{names[0]}",
                             },
                         )
                     return
@@ -520,6 +574,7 @@ class NavigationMixin:
 
     def action_navigate_up(self) -> None:
         """Navigate up within the current panel (same column) or move to previous container at boundaries."""
+
         from ...debug import get_debug_logger
         from ...widgets.plugin_table import PluginTableWidget
 
@@ -538,36 +593,39 @@ class NavigationMixin:
                 focused_widget_id=getattr(focused_widget, "id", None),
             )
 
-        # If ListView focused, pass-through to its cursor movement; handle only boundaries
-        if isinstance(focused_widget, ListView):
-            if focused_widget.id == "servers_list":
-                current_index = getattr(focused_widget, "index", None)
-                if current_index in (None, 0):
-                    # At top - move focus to + Add button instead of last checkbox
-                    try:
-                        add_button = self.query_one("#add_server", Button)
-                        if add_button and getattr(add_button, "can_focus", False):
-                            add_button.focus()
-                            return
-                    except Exception:
-                        # Button doesn't exist (e.g., in config selector screen)
-                        pass
-                    # Fallback to last checkbox if Add button not available
-                    try:
-                        from ...widgets.plugin_table import PluginTableWidget
+        # Handle ServerListWidget navigation (checkbox or name within servers_list)
+        if self._is_in_servers_list(focused_widget):
+            if not self._navigate_servers_list_vertical(focused_widget, direction="up"):
+                # At top boundary - move focus to + Add button
+                try:
+                    add_button = self.query_one("#add_server", Button)
+                    if add_button and getattr(add_button, "can_focus", False):
+                        add_button.focus()
+                        return
+                except Exception:
+                    pass
+                # Fallback to last checkbox in global security
+                try:
+                    from ...widgets.plugin_table import PluginTableWidget
 
-                        security_widget = self.query_one(
-                            "#global_security_widget", PluginTableWidget
-                        )
-                        checkboxes = security_widget.query("ASCIICheckbox")
-                        if checkboxes:
-                            checkbox_list = list(checkboxes)
-                            if checkbox_list:
-                                checkbox_list[-1].focus()
-                                return
-                    except Exception:
-                        pass
-            # Pass-through to widget for normal movement
+                    security_widget = self.query_one(
+                        "#global_security_widget", PluginTableWidget
+                    )
+                    checkboxes = security_widget.query("ASCIICheckbox")
+                    if checkboxes:
+                        checkbox_list = list(checkboxes)
+                        if checkbox_list:
+                            checkbox_list[-1].focus()
+                            return
+                except Exception:
+                    pass
+            return
+
+        # Legacy ListView support
+        if isinstance(focused_widget, ListView):
+            current_index = getattr(focused_widget, "index", None)
+            if current_index in (None, 0):
+                return
             try:
                 focused_widget.action_cursor_up()
             except Exception:
@@ -878,6 +936,7 @@ class NavigationMixin:
 
     def action_navigate_right(self) -> None:
         """Navigate right: within row (checkbox→action), or cross to Auditing from Security action; Auditing action behaves like Tab."""
+
         from textual.widgets import Input
         from ...debug import get_debug_logger
 
@@ -904,33 +963,87 @@ class NavigationMixin:
                 pass
             return
 
-        # Deterministic routing from servers_list → server_details
-        # Rationale: When the servers list has focus and the user presses →,
-        # always try to enter the server_details panel.
-        try:
-            from textual.widgets import ListView as _LV
-
-            if (
-                isinstance(focused_widget, _LV)
-                and getattr(focused_widget, "id", None) == "servers_list"
-            ):
-                target = self._get_server_details_target()
-                if target and getattr(target, "can_focus", False):
-                    # Move focus and align container index/memory
-                    target.focus()
-                    self._update_container_index("server_details")
+        # Deterministic routing within servers_list and to server_details
+        # Handle ServerNameStatic - right arrow goes to first focusable DynamicColumnCell or server details
+        if isinstance(focused_widget, ServerNameStatic):
+            try:
+                row = focused_widget.parent
+                cells = [c for c in row.query(DynamicColumnCell) if c.can_focus]
+                if cells:
+                    cells[0].focus()
                     if logger:
-                        logger.log_navigation(
-                            "next",
-                            "servers_list",
-                            "server_details",
+                        logger.log_event(
+                            "NAV_SERVER_NAME_TO_COLUMN",
                             screen=self,
-                            widget=target,
+                            context={
+                                "server": focused_widget.server_name,
+                                "column_id": cells[0].column_id,
+                            },
                         )
                     return
-        except Exception:
-            # Fall back to generic flow if anything goes wrong
-            pass
+            except Exception:
+                pass
+            # No focusable columns - go to server details
+            target = self._get_server_details_target()
+            if target and getattr(target, "can_focus", False):
+                target.focus()
+                self._update_container_index("server_details")
+                if logger:
+                    logger.log_navigation(
+                        "next",
+                        "servers_list",
+                        "server_details",
+                        screen=self,
+                        widget=target,
+                    )
+                return
+
+        # Handle DynamicColumnCell - right arrow goes to next cell or server details
+        if isinstance(focused_widget, DynamicColumnCell):
+            try:
+                row = focused_widget.parent
+                cells = [c for c in row.query(DynamicColumnCell) if c.can_focus]
+                if focused_widget in cells:
+                    idx = cells.index(focused_widget)
+                    if idx + 1 < len(cells):
+                        cells[idx + 1].focus()
+                        if logger:
+                            logger.log_event(
+                                "NAV_COLUMN_TO_NEXT_COLUMN",
+                                screen=self,
+                                context={
+                                    "server": focused_widget.server_name,
+                                    "from_column": focused_widget.column_id,
+                                    "to_column": cells[idx + 1].column_id,
+                                },
+                            )
+                        return
+            except Exception:
+                pass
+            # Last cell or error - go to server details
+            target = self._get_server_details_target()
+            if target and getattr(target, "can_focus", False):
+                target.focus()
+                self._update_container_index("server_details")
+                if logger:
+                    logger.log_navigation(
+                        "next",
+                        "servers_list",
+                        "server_details",
+                        screen=self,
+                        widget=target,
+                    )
+                return
+
+        # Handle ASCIICheckbox in server list - right arrow goes to server name
+        if self._is_in_servers_list(focused_widget) and isinstance(focused_widget, ASCIICheckbox):
+            try:
+                row = focused_widget.parent
+                name_widget = row.query_one(ServerNameStatic)
+                name_widget.focus()
+                return
+            except Exception:
+                pass
 
         # Panel-aware horizontal navigation
         panel_name = self._get_panel_name_for_widget(focused_widget)
@@ -1021,6 +1134,7 @@ class NavigationMixin:
 
     def action_navigate_left(self) -> None:
         """Navigate left: within row (action→checkbox), or cross from Auditing checkbox to Security action; Security checkbox behaves like Shift+Tab."""
+
         from textual.widgets import Input
         from ...debug import get_debug_logger
 
@@ -1120,16 +1234,19 @@ class NavigationMixin:
                                             target.focus()
                                             return
                             else:
-                                # We're on first action, go back to checkbox
-                                target = self._resolve_widget_by_row_col(
-                                    panel_widget, row, "checkbox"
-                                )
-                                if target:
+                                # We're on first action, try to go back to checkbox
+                                rows_data = self._collect_panel_rows(panel_widget)
+                                checkbox = rows_data[row].get("checkbox") if rows_data and row < len(rows_data) else None
+                                if checkbox and getattr(checkbox, "can_focus", False) and not getattr(checkbox, "disabled", False):
                                     self._set_panel_focus_memory(
                                         panel_name, row, "checkbox"
                                     )
-                                    target.focus()
+                                    checkbox.focus()
                                     return
+                                # Checkbox unfocusable (inherited from global) -
+                                # fall through to server list
+                                self._focus_servers_list_rightmost_column()
+                                return
                         else:
                             # From checkbox, move to previous container
                             self.action_navigate_previous()
@@ -1137,10 +1254,36 @@ class NavigationMixin:
             except Exception:
                 pass
 
-        # Block LEFT navigation from servers list and Add button (left edge of UI)
-        from textual.widgets import ListView
-        if isinstance(focused_widget, ListView) and getattr(focused_widget, "id", None) == "servers_list":
-            return
+        # Handle LEFT navigation within servers list
+        if self._is_in_servers_list(focused_widget):
+            # If on checkbox, block left (can't go further left)
+            if isinstance(focused_widget, ASCIICheckbox):
+                return
+            # If on dynamic column cell, move to previous cell or server name
+            if isinstance(focused_widget, DynamicColumnCell):
+                try:
+                    row = focused_widget.parent
+                    cells = [c for c in row.query(DynamicColumnCell) if c.can_focus]
+                    if focused_widget in cells:
+                        idx = cells.index(focused_widget)
+                        if idx > 0:
+                            cells[idx - 1].focus()
+                            return
+                    # Not in list or first cell — fall back to server name
+                    name_widget = row.query_one(ServerNameStatic)
+                    name_widget.focus()
+                except Exception:
+                    pass
+                return
+            # If on server name, move to checkbox
+            if isinstance(focused_widget, ServerNameStatic):
+                try:
+                    row = focused_widget.parent
+                    checkbox = row.query_one(ASCIICheckbox)
+                    checkbox.focus()
+                except Exception:
+                    pass
+                return
         if hasattr(focused_widget, "id") and focused_widget.id == "add_server":
             return
 
@@ -1202,24 +1345,23 @@ class NavigationMixin:
             except Exception:
                 pass
 
-        # Handle ListView widgets
-        if isinstance(focused_widget, ListView):
-            if focused_widget.id == "servers_list":
-                old_focus = self.container_focus_memory.get("servers_list")
-                self.container_focus_memory["servers_list"] = focused_widget
+        # Handle ServerListWidget (servers list checkbox or name)
+        if self._is_in_servers_list(focused_widget):
+            old_focus = self.container_focus_memory.get("servers_list")
+            self.container_focus_memory["servers_list"] = focused_widget
 
-                # Log focus memory update
-                if logger:
-                    logger.log_state_change(
-                        "focus_memory",
-                        {"servers_list": old_focus},
-                        {"servers_list": focused_widget},
-                        screen=self,
-                        widget=focused_widget,
-                    )
+            # Log focus memory update
+            if logger:
+                logger.log_state_change(
+                    "focus_memory",
+                    {"servers_list": old_focus},
+                    {"servers_list": focused_widget},
+                    screen=self,
+                    widget=focused_widget,
+                )
 
-                self._update_container_index("servers_list")
-                return
+            self._update_container_index("servers_list")
+            return
 
         # Handle server details - any focusable widget in server details or server info containers
         try:
@@ -1285,6 +1427,161 @@ class NavigationMixin:
             if current == container:
                 return True
             current = current.parent
+        return False
+
+    def _is_in_servers_list(self, widget) -> bool:
+        """Check if a widget is inside the servers list (checkbox, name, or dynamic column)."""
+        if isinstance(widget, (ServerNameStatic, DynamicColumnCell, ASCIICheckbox)):
+            try:
+                servers_list = self.query_one("#servers_list", ServerListWidget)
+                return self._is_widget_inside_container(widget, servers_list)
+            except Exception:
+                return False
+        return False
+
+    def _navigate_servers_list_vertical(self, focused_widget, direction: str) -> bool:
+        """Navigate up/down within the servers list, maintaining the same column.
+
+        Args:
+            focused_widget: The currently focused widget (checkbox, server name, or column cell)
+            direction: "up" or "down"
+
+        Returns:
+            True if navigation was successful, False if at boundary
+        """
+        from ...debug import get_debug_logger
+
+        logger = get_debug_logger()
+
+        try:
+            servers_list = self.query_one("#servers_list", ServerListWidget)
+        except Exception:
+            return False
+
+        server_names = servers_list.get_all_server_names()
+        if not server_names:
+            return False
+
+        # Determine current server and column type
+        current_server = None
+        is_checkbox = isinstance(focused_widget, ASCIICheckbox)
+        is_column_cell = isinstance(focused_widget, DynamicColumnCell)
+
+        if isinstance(focused_widget, ServerNameStatic):
+            current_server = focused_widget.server_name
+        elif is_column_cell:
+            current_server = focused_widget.server_name
+        elif is_checkbox:
+            parent = focused_widget.parent
+            if parent and hasattr(parent, "server_name"):
+                current_server = parent.server_name
+
+        if not current_server:
+            return False
+
+        try:
+            current_index = server_names.index(current_server)
+        except ValueError:
+            return False
+
+        # Calculate target index
+        if direction == "down":
+            target_index = current_index + 1
+            if target_index >= len(server_names):
+                return False  # At bottom boundary
+        elif direction == "up":
+            target_index = current_index - 1
+            if target_index < 0:
+                return False  # At top boundary
+        else:
+            return False
+
+        target_server = server_names[target_index]
+
+        # Focus the same column in the target row
+        if is_checkbox:
+            column = "checkbox"
+            success = servers_list.focus_server_checkbox(target_server)
+        elif is_column_cell:
+            column = "column"
+            success = servers_list.focus_server_column(
+                target_server, focused_widget.column_id
+            )
+        else:
+            column = "name"
+            success = servers_list.focus_server_name(target_server)
+
+        if logger and success:
+            logger.log_event(
+                "NAV_SERVERS_LIST_VERTICAL",
+                screen=self,
+                context={
+                    "from_server": current_server,
+                    "to_server": target_server,
+                    "direction": direction,
+                    "column": column,
+                },
+            )
+
+        return success
+
+    def _focus_servers_list_rightmost_column(self) -> bool:
+        """Focus the rightmost focusable column in the selected server's row.
+
+        Tries dynamic column cells first (rightmost), then server name.
+        Used when navigating left from server details when the checkbox is unfocusable.
+        """
+        from ...debug import get_debug_logger
+
+        logger = get_debug_logger()
+
+        try:
+            servers_list = self.query_one("#servers_list", ServerListWidget)
+        except Exception:
+            return False
+
+        selected = getattr(self, "selected_server", None)
+        if not selected:
+            return False
+
+        row = servers_list.get_row(selected)
+        if not row:
+            return False
+
+        # Try last focusable dynamic column cell (rightmost)
+        try:
+            cells = [c for c in row.query(DynamicColumnCell) if c.can_focus]
+            if cells:
+                cells[-1].focus()
+                self._update_container_index("servers_list")
+                if logger:
+                    logger.log_event(
+                        "NAV_TO_SERVERS_LIST_COLUMN",
+                        screen=self,
+                        context={
+                            "server": selected,
+                            "column_id": cells[-1].column_id,
+                        },
+                    )
+                return True
+        except Exception:
+            pass
+
+        # Fall back to server name
+        try:
+            name_widget = row.query_one(ServerNameStatic)
+            name_widget.focus()
+            self._update_container_index("servers_list")
+            if logger:
+                logger.log_event(
+                    "NAV_TO_SERVERS_LIST_NAME",
+                    screen=self,
+                    context={"server": selected},
+                )
+            return True
+        except Exception:
+            pass
+
         return False
 
     # Panel navigation helpers
@@ -1595,18 +1892,19 @@ class NavigationMixin:
             return None
 
     def _get_servers_list_target(self):
-        """Get the target widget for servers list (remembered or ListView itself)."""
+        """Get the target widget for servers list (remembered or first server name)."""
         container_name = "servers_list"
 
-        # For ListView widgets, we remember the ListView itself since it handles internal focus
+        # Return remembered widget if it's still focusable
         if container_name in self.container_focus_memory:
             remembered_widget = self.container_focus_memory[container_name]
             if remembered_widget and getattr(remembered_widget, "can_focus", False):
                 return remembered_widget
 
-        # Fall back to the ListView
+        # Fall back to first server name in the ServerListWidget
         try:
-            return self.query_one("#servers_list", ListView)
+            servers_list = self.query_one("#servers_list", ServerListWidget)
+            return servers_list.get_first_focusable()
         except (KeyError, AttributeError):
             return None
 

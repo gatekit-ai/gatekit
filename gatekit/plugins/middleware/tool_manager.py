@@ -66,7 +66,7 @@ class ToolManagerPlugin(MiddlewarePlugin):
         return ["Setup"]
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
+    def get_config_schema(cls) -> Dict[str, Any]:
         """Return JSON Schema for Tool Manager configuration.
 
         Configure which tools are visible to MCP clients (allowlist).

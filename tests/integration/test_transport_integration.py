@@ -75,12 +75,9 @@ for line in sys.stdin:
             await transport.connect()
             assert transport.is_connected()
 
-            # Send a ping request
+            # Send a ping request and receive response
             request = MCPRequest(jsonrpc="2.0", method="ping", id=1)
-            await transport.send_message(request)
-
-            # Receive the response
-            response = await transport.receive_message()
+            response = await transport.send_and_receive(request)
 
             assert response.jsonrpc == "2.0"
             assert response.id == 1
@@ -100,17 +97,14 @@ for line in sys.stdin:
         try:
             await transport.connect()
 
-            # Send request with parameters
+            # Send request with parameters and receive response
             request = MCPRequest(
                 jsonrpc="2.0",
                 method="test_method",
                 id=2,
                 params={"key": "value", "number": 42},
             )
-            await transport.send_message(request)
-
-            # Receive response
-            response = await transport.receive_message()
+            response = await transport.send_and_receive(request)
 
             assert response.jsonrpc == "2.0"
             assert response.id == 2
@@ -131,9 +125,7 @@ for line in sys.stdin:
             # Send multiple requests
             for i in range(5):
                 request = MCPRequest(jsonrpc="2.0", method=f"test_{i}", id=i + 100)
-                await transport.send_message(request)
-
-                response = await transport.receive_message()
+                response = await transport.send_and_receive(request)
 
                 assert response.jsonrpc == "2.0"
                 assert response.id == i + 100
@@ -149,9 +141,7 @@ for line in sys.stdin:
             assert transport.is_connected()
 
             request = MCPRequest(jsonrpc="2.0", method="context_test", id=999)
-            await transport.send_message(request)
-
-            response = await transport.receive_message()
+            response = await transport.send_and_receive(request)
             assert response.result["echo"] == "context_test"
 
         # Transport should be disconnected after context exits
@@ -187,7 +177,7 @@ async def test_transport_with_failing_process():
         await asyncio.sleep(0.2)
 
         with pytest.raises((TransportDisconnectedError, TransportProcessError)):
-            await transport.send_message(request)
+            await transport.send_and_receive(request)
 
     finally:
         await transport.disconnect()

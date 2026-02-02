@@ -7,7 +7,10 @@ MCP servers via stdin/stdout using subprocess management.
 import asyncio
 import json
 import logging
+import os
+import signal
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -143,11 +146,23 @@ class StdioTransport(Transport):
                     "operation": "connect",
                 },
             )
+            # Spawn in a new process group so we can kill the entire tree
+            # (e.g., npx wrapper + child node process) on shutdown.
+            # Without this, only the direct child is signaled and
+            # grandchild processes become orphans.
+            if sys.platform == "win32":
+                platform_kwargs = {
+                    "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP
+                }
+            else:
+                platform_kwargs = {"start_new_session": True}
+
             self._process = await asyncio.create_subprocess_exec(
                 *resolved_command,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **platform_kwargs,
             )
             logger.info(
                 "MCP server process started",
@@ -243,8 +258,10 @@ class StdioTransport(Transport):
                 break
 
         try:
-            # Try graceful termination first
-            self._process.terminate()
+            # Try graceful termination first — kill the entire process group
+            # on POSIX so grandchild processes (e.g. node spawned by npx)
+            # are also terminated.
+            self._terminate_process_tree()
 
             try:
                 # Wait up to 2 seconds for graceful shutdown
@@ -263,7 +280,7 @@ class StdioTransport(Transport):
                 except ValueError:
                     # Ignore logging errors during shutdown
                     pass
-                self._process.kill()
+                self._kill_process_tree()
                 try:
                     # Give kill a short time to work
                     await asyncio.wait_for(self._process.wait(), timeout=1.0)
@@ -301,6 +318,33 @@ class StdioTransport(Transport):
                     # Ignore errors during stream cleanup - best effort only
                     pass
             self._process = None
+
+    def _terminate_process_tree(self) -> None:
+        """Send SIGTERM to the entire process group (POSIX) or process (Windows).
+
+        On POSIX, os.killpg sends the signal to every process in the group
+        created by start_new_session=True. On Windows, process.terminate()
+        already terminates the process tree when CREATE_NEW_PROCESS_GROUP was used.
+        """
+        if sys.platform != "win32":
+            try:
+                os.killpg(self._process.pid, signal.SIGTERM)
+                return
+            except (ProcessLookupError, PermissionError):
+                # Process already exited or we lack permission — fall through
+                return
+        # Windows fallback
+        self._process.terminate()
+
+    def _kill_process_tree(self) -> None:
+        """Send SIGKILL to the entire process group (POSIX) or kill (Windows)."""
+        if sys.platform != "win32":
+            try:
+                os.killpg(self._process.pid, signal.SIGKILL)
+                return
+            except (ProcessLookupError, PermissionError):
+                return
+        self._process.kill()
 
     async def _limited_readline(
         self, stream: asyncio.StreamReader, max_bytes: int
@@ -627,106 +671,6 @@ class StdioTransport(Transport):
             )
             # Don't raise - just log and continue
 
-    async def send_message(self, message: MCPRequest) -> None:
-        """Send a JSON-RPC message to the MCP server via stdin.
-
-        Args:
-            message: The MCP request message to send
-
-        Raises:
-            TransportDisconnectedError: If not connected
-            TransportProcessError: If process has exited
-            TransportConcurrencyLimitError: If concurrent request limit exceeded
-            TransportConnectionError: If connection-related send fails
-            TransportError: If other send errors occur or circuit breaker is open
-        """
-        if not self.is_connected():
-            raise TransportDisconnectedError("send_message")
-
-        # Check circuit breaker
-        if self._validation_circuit_breaker_until is not None:
-            if time.time() < self._validation_circuit_breaker_until:
-                raise TransportError(
-                    f"Circuit breaker is open due to {self._consecutive_validation_failures} consecutive validation failures. "
-                    f"Retry after {self._validation_circuit_breaker_until - time.time():.1f} seconds."
-                )
-            else:
-                # Circuit breaker timeout expired, reset
-                self._validation_circuit_breaker_until = None
-                self._consecutive_validation_failures = 0
-                logger.info("Circuit breaker reset after backoff period")
-
-        # Check if process has exited
-        if self._process.returncode is not None:
-            raise TransportProcessError(
-                f"MCP server process has exited with code {self._process.returncode}",
-                exit_code=self._process.returncode,
-            )
-
-        # Register this request for response correlation
-        async with self._request_lock:
-            # Check concurrent request limit
-            if self._concurrent_request_count >= self._max_concurrent_requests:
-                raise TransportConcurrencyLimitError(
-                    limit=self._max_concurrent_requests,
-                    current=self._concurrent_request_count,
-                )
-            future = asyncio.Future()
-            self._pending_requests[message.id] = future
-            self._concurrent_request_count += (
-                1  # Track all requests, not just send_and_receive
-            )
-
-        # Serialize message to JSON
-        json_data = self._serialize_request(message)
-
-        try:
-            if self._log_json_content:
-                logger.debug(f"Sending message: {json_data.strip()}")
-            else:
-                logger.debug(
-                    f"Sending request - method: {message.method}, id: {message.id}"
-                )
-            with self._metrics_lock:
-                self._metrics["requests_sent"] += 1
-            self._process.stdin.write(json_data.encode("utf-8"))
-            await self._process.stdin.drain()
-
-        except (BrokenPipeError, ConnectionResetError) as e:
-            # Clean up on failure
-            async with self._request_lock:
-                self._pending_requests.pop(message.id, None)
-                self._concurrent_request_count -= 1
-            with self._metrics_lock:
-                self._metrics["requests_failed"] += 1
-            logger.exception(
-                "Failed to send message - connection error",
-                extra={
-                    "error": str(e),
-                    "request_id": message.id,
-                    "method": message.method,
-                    "operation": "send_message",
-                },
-            )
-            raise TransportConnectionError(f"Failed to send message: {e}", cause=e)
-        except Exception as e:
-            # Clean up on failure
-            async with self._request_lock:
-                self._pending_requests.pop(message.id, None)
-                self._concurrent_request_count -= 1
-            with self._metrics_lock:
-                self._metrics["requests_failed"] += 1
-            logger.exception(
-                "Failed to send message - unexpected error",
-                extra={
-                    "error": str(e),
-                    "request_id": message.id,
-                    "method": message.method,
-                    "operation": "send_message",
-                },
-            )
-            raise TransportError(f"Failed to send message: {e}", cause=e)
-
     async def send_notification(self, notification: MCPNotification) -> None:
         """Send a notification to the MCP server via stdin.
 
@@ -779,92 +723,6 @@ class StdioTransport(Transport):
                 },
             )
             raise TransportConnectionError(f"Failed to send notification: {e}", cause=e)
-
-    async def receive_message(self) -> MCPResponse:
-        """Receive a JSON-RPC response for any pending request.
-
-        This method waits for the next available response from any pending request.
-        Responses are delivered in the order they arrive, not necessarily in the
-        order requests were sent.
-
-        Returns:
-            The received MCP response or error message
-
-        Raises:
-            TransportDisconnectedError: If not connected
-            TransportRequestError: If no pending requests
-            TransportTimeoutError: If timeout waiting for response
-        """
-        if not self.is_connected():
-            raise TransportDisconnectedError("receive_message")
-
-        # Check if we have any pending requests
-        async with self._request_lock:
-            if not self._pending_requests:
-                raise TransportRequestError("No pending requests")
-            # Get any pending future to wait for
-            pending_futures = list(self._pending_requests.values())
-
-        if not pending_futures:
-            raise TransportRequestError("No pending requests")
-
-        try:
-            # Wait for any response to arrive using wait()
-            done, pending = await asyncio.wait(
-                pending_futures,
-                timeout=self.request_timeout,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-
-            if not done:
-                # Timeout - don't clear all requests, just report timeout
-                raise TransportTimeoutError(
-                    f"Timeout waiting for response after {self.request_timeout} seconds",
-                    timeout=self.request_timeout,
-                    operation="receive_message",
-                )
-
-            # Get the completed future and its response
-            completed_future = done.pop()
-            response_dict = completed_future.result()
-
-            # Clean up the completed request from pending dict
-            response_id = response_dict.get("id")
-            if response_id is not None:
-                async with self._request_lock:
-                    self._pending_requests.pop(response_id, None)
-                    self._concurrent_request_count -= 1
-
-            # Parse response (validation already done in dispatcher)
-            if "error" in response_dict and response_dict["error"] is not None:
-                # This is an error response
-                return MCPResponse(
-                    jsonrpc=response_dict["jsonrpc"],
-                    id=response_dict["id"],
-                    error=response_dict["error"],
-                )
-            else:
-                # This is a regular response
-                return MCPResponse(
-                    jsonrpc=response_dict["jsonrpc"],
-                    id=response_dict["id"],
-                    result=response_dict.get("result"),
-                )
-
-        except asyncio.CancelledError:
-            # Clean up if task is cancelled
-            # Try to find and clean up the completed future if response_id is available
-            try:
-                if response_id is not None:
-                    async with self._request_lock:
-                        if self._pending_requests.pop(response_id, None):
-                            self._concurrent_request_count -= 1
-            except NameError:
-                # response_id wasn't set yet - we haven't actually consumed a response
-                # But we still need to ensure counter is consistent
-                # Since we didn't get a response, no decrement needed
-                pass
-            raise
 
     async def cancel_request(self, request_id: Union[str, int]) -> bool:
         """Cancel a pending request and clean up resources.

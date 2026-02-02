@@ -37,18 +37,6 @@ class Transport(ABC):
         pass
 
     @abstractmethod
-    async def send_message(self, message: MCPRequest) -> None:
-        """Send a message to the MCP server.
-
-        Args:
-            message: The MCP request message to send
-
-        Raises:
-            RuntimeError: If not connected or send fails
-        """
-        pass
-
-    @abstractmethod
     async def send_notification(self, notification: MCPNotification) -> None:
         """Send a notification to the MCP server.
 
@@ -57,18 +45,6 @@ class Transport(ABC):
 
         Raises:
             RuntimeError: If not connected or send fails
-        """
-        pass
-
-    @abstractmethod
-    async def receive_message(self) -> MCPResponse:
-        """Receive a message from the MCP server.
-
-        Returns:
-            The received MCP response message (may contain error field)
-
-        Raises:
-            RuntimeError: If not connected, receive fails, or message is invalid
         """
         pass
 

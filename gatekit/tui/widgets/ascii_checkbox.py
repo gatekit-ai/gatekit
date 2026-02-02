@@ -132,8 +132,9 @@ class ASCIICheckbox(ToggleButton):
                 try:
                     screen = self.screen
                 except Exception:
-                    # Widget not mounted yet, skip logging
-                    return
+                    # Widget not mounted yet, skip logging (but don't return —
+                    # other watch_value logic below still needs to run)
+                    screen = None
 
                 # Extract plugin info from widget ID and context
                 plugin_name = "unknown"
@@ -180,3 +181,34 @@ class ASCIICheckbox(ToggleButton):
             except Exception:
                 # Ignore any errors to prevent disrupting the TUI
                 pass
+
+        # Handle server enable/disable checkboxes by posting directly to screen
+        # (message bubbling doesn't work reliably for Container widgets)
+        # Guard: skip during widget construction (before mount) to avoid
+        # marking the config dirty when checkboxes are initialized with value=True.
+        if old_value != value and hasattr(self, "id") and self.id:
+            if self.id.startswith("server_checkbox_"):
+                try:
+                    # Don't fire during construction — only after widget is mounted
+                    _ = self.screen  # raises if not yet mounted
+                except Exception:
+                    return
+                try:
+                    server_name = self.id.replace("server_checkbox_", "", 1)
+                    from .server_list import ServerEnabledToggle
+
+                    if logger:
+                        logger.log_event(
+                            "SERVER_CHECKBOX_DIRECT_POST",
+                            context={
+                                "server_name": server_name,
+                                "enabled": value,
+                            },
+                        )
+
+                    if self.app and self.app.screen:
+                        self.app.screen.post_message(
+                            ServerEnabledToggle(server_name, value)
+                        )
+                except Exception:
+                    pass

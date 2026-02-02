@@ -11,9 +11,18 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
-from textual.events import Focus, Resize
+from textual.events import Resize
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Static, ListView, Input
+from textual.widgets import Button, Footer, Header, Static, Input
+
+from gatekit.tui.widgets.server_list import (
+    ServerListWidget,
+    ServerSelected,
+    ServerEnabledToggle,
+    ColumnCellActivated,
+    ColumnActionRequested,
+)
+from gatekit.tui.widgets.ascii_checkbox import ASCIICheckbox
 
 from gatekit.config.models import ProxyConfig
 from gatekit.plugins.manager import PluginManager
@@ -357,14 +366,6 @@ class ConfigEditorScreen(
         text-overflow: ellipsis;
     }
 
-    /* Hide blurred highlight in servers list when unfocused */
-    #servers_list > ListItem.-highlight {
-        background: transparent;
-    }
-
-    #servers_list:focus > ListItem.-highlight {
-        background: $block-cursor-background;
-    }
     """
 
     BINDINGS = [
@@ -410,7 +411,7 @@ class ConfigEditorScreen(
         self.server_identity_map: Dict[str, str] = {}
         self.server_tool_map: Dict[str, Dict[str, Any]] = {}
         self._identity_test_status: Dict[str, Dict[str, Optional[str]]] = {}
-        self._pending_command_cache: Dict[str, str] = {}
+        self._pending_connection_cache: Dict[str, str] = {}
         self.selected_server = None
         self.selected_plugin = None
         self._identity_discovery_attempted: set[str] = set()
@@ -540,9 +541,7 @@ class ConfigEditorScreen(
                             "+ Add", id="add_server", classes="pane-header-button"
                         )
                     with Container(classes="pane-content"):
-                        # IMPORTANT: Keep ListView pure (only selectable items). Do not mount headers/buttons in the list.
-                        # See docs/visual-configuration-interface/tui-developer-guidelines.md
-                        yield ListView(id="servers_list")
+                        yield ServerListWidget(id="servers_list")
 
                 # Right pane: Combined details and plugins
                 with VerticalScroll(
@@ -758,15 +757,19 @@ class ConfigEditorScreen(
             if getattr(upstream, "is_draft", False):
                 continue
 
-            if upstream.transport != "stdio" or not upstream.command:
+            # Check if server has required connection info for its transport type
+            is_stdio_ready = upstream.transport == "stdio" and upstream.command
+            is_http_ready = upstream.transport == "http" and upstream.url
+
+            if not (is_stdio_ready or is_http_ready):
                 self._identity_discovery_attempted.add(alias)
                 self._tool_discovery_attempted.add(alias)
                 if alias not in self.server_tool_map:
                     self.server_tool_map[alias] = {
                         "tools": [],
                         "last_refreshed": None,
-                        "status": "unsupported",
-                        "message": "Tool discovery available only for stdio transports with launch commands.",
+                        "status": "incomplete",
+                        "message": "Server connection not configured.",
                     }
                 continue
 
@@ -879,15 +882,27 @@ class ConfigEditorScreen(
 
     async def _handshake_upstream(self, upstream) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
         """Perform a lightweight MCP handshake and fetch tool metadata."""
-        if upstream.transport != "stdio" or not upstream.command:
+        # Handle HTTP transport
+        if upstream.transport == "http":
+            if not upstream.url:
+                return None, None
+            identity, tools_payload = await handshake_upstream(
+                url=upstream.url,
+                tls_verify=getattr(upstream, "tls_verify", True),
+                timeout=30.0,
+            )
+        elif upstream.transport == "stdio":
+            if not upstream.command:
+                return None, None
+            # Use shared handshake utility
+            # 30s timeout allows for first-run npx/uvx package downloads
+            identity, tools_payload = await handshake_upstream(
+                command=upstream.command,
+                timeout=30.0,
+            )
+        else:
+            # Unknown transport
             return None, None
-
-        # Use shared handshake utility
-        # 30s timeout allows for first-run npx/uvx package downloads
-        identity, tools_payload = await handshake_upstream(
-            command=upstream.command,
-            timeout=30.0,
-        )
 
         if identity:
             logger.debug(
@@ -1025,7 +1040,7 @@ class ConfigEditorScreen(
             # Silently ignore any errors during resize
             pass
 
-    def on_descendant_focus(self, event: Focus) -> None:
+    def on_descendant_focus(self, event) -> None:
         """Catch focus events from any descendant widget and track them for navigation memory."""
         focused_widget = event.widget
 
@@ -1147,20 +1162,18 @@ class ConfigEditorScreen(
                 servers_list = None
                 for _ in range(10):
                     try:
-                        servers_list = self.query_one("#servers_list", ListView)
+                        servers_list = self.query_one("#servers_list", ServerListWidget)
                         break
                     except Exception:
                         await asyncio.sleep(0.05)
 
                 if servers_list is not None:
-                    target_item = None
-                    for item in servers_list.children:
-                        if getattr(item, "data_server_name", None) == requested_scope:
-                            target_item = item
-                            break
-
-                    if target_item is not None:
-                        await self._activate_server_item(target_item)
+                    # Check if requested_scope is a valid server name
+                    server_names = servers_list.get_all_server_names()
+                    if requested_scope in server_names:
+                        self.selected_server = requested_scope
+                        await self._populate_server_details()
+                        servers_list.focus_server_name(requested_scope)
                     else:
                         self.selected_server = requested_scope
                         await self._populate_server_details()
@@ -1300,6 +1313,165 @@ class ConfigEditorScreen(
 
         await _PAM.on_plugin_toggle(self, event)
 
+    @on(ServerSelected)
+    async def _config_editor_on_server_selected(
+        self, event: ServerSelected
+    ) -> None:
+        """Forward ServerSelected to the mixin implementation.
+
+        This shim ensures the handler is registered on the concrete Screen class,
+        avoiding any issues where @on on a base mixin class isn't collected.
+        """
+        try:
+            from ...debug import get_debug_logger
+
+            _logger = get_debug_logger()
+            if _logger:
+                _logger.log_event(
+                    "SERVER_SELECTED_SHIM_RECEIVED",
+                    screen=self,
+                    context={
+                        "server_name": getattr(event, "server_name", None),
+                        "event_class": event.__class__.__name__,
+                    },
+                )
+        except Exception:
+            pass
+        from .server_management import ServerManagementMixin as _SMM
+
+        await _SMM.on_server_selected(self, event)
+
+    @on(ServerEnabledToggle)
+    async def _config_editor_on_server_enabled_toggle(
+        self, event: ServerEnabledToggle
+    ) -> None:
+        """Forward ServerEnabledToggle to the mixin implementation.
+
+        This shim ensures the handler is registered on the concrete Screen class,
+        avoiding any issues where @on on a base mixin class isn't collected.
+        """
+        try:
+            from ...debug import get_debug_logger
+
+            _logger = get_debug_logger()
+            if _logger:
+                _logger.log_event(
+                    "SERVER_ENABLED_TOGGLE_SHIM_RECEIVED",
+                    screen=self,
+                    context={
+                        "server_name": getattr(event, "server_name", None),
+                        "enabled": getattr(event, "enabled", None),
+                        "event_class": event.__class__.__name__,
+                    },
+                )
+        except Exception:
+            pass
+        from .server_management import ServerManagementMixin as _SMM
+
+        await _SMM.on_server_enabled_toggle(self, event)
+
+    @on(ColumnCellActivated)
+    def _config_editor_on_column_cell_activated(
+        self, event: ColumnCellActivated
+    ) -> None:
+        """Forward ColumnCellActivated to the mixin implementation.
+
+        This shim ensures the handler is registered on the concrete Screen class,
+        avoiding any issues where @on on a base mixin class isn't collected.
+        """
+        try:
+            from ...debug import get_debug_logger
+
+            _logger = get_debug_logger()
+            if _logger:
+                _logger.log_event(
+                    "COLUMN_CELL_ACTIVATED_SHIM_RECEIVED",
+                    screen=self,
+                    context={
+                        "server_name": getattr(event, "server_name", None),
+                        "column_id": getattr(event, "column_id", None),
+                        "handler_name": getattr(event, "handler_name", None),
+                        "event_class": event.__class__.__name__,
+                    },
+                )
+        except Exception:
+            pass
+        from .server_management import ServerManagementMixin as _SMM
+
+        _SMM.on_column_cell_activated(self, event)
+
+    @on(ColumnActionRequested)
+    def _config_editor_on_column_action_requested(
+        self, event: ColumnActionRequested
+    ) -> None:
+        """Forward ColumnActionRequested to the mixin implementation.
+
+        This shim ensures the handler is registered on the concrete Screen class,
+        avoiding any issues where @on on a base mixin class isn't collected.
+        """
+        try:
+            from ...debug import get_debug_logger
+
+            _logger = get_debug_logger()
+            if _logger:
+                _logger.log_event(
+                    "COLUMN_ACTION_REQUESTED_SHIM_RECEIVED",
+                    screen=self,
+                    context={
+                        "column_id": getattr(event, "column_id", None),
+                        "handler_name": getattr(event, "handler_name", None),
+                        "method_name": getattr(event, "method_name", None),
+                        "server_name": getattr(event, "server_name", None),
+                        "event_class": event.__class__.__name__,
+                    },
+                )
+        except Exception:
+            pass
+        from .server_management import ServerManagementMixin as _SMM
+
+        _SMM.on_column_action_requested(self, event)
+
+    @on(ASCIICheckbox.Changed)
+    async def _config_editor_on_server_checkbox_changed(
+        self, event: ASCIICheckbox.Changed
+    ) -> None:
+        """Handle server enable/disable checkbox changes.
+
+        ASCIICheckbox.Changed events from server checkboxes (ID starts with
+        'server_checkbox_') are converted to ServerEnabledToggle messages.
+        This shim is needed because @on decorators on Container widgets
+        (like ServerRowWidget) don't work reliably.
+        """
+        # Only handle server checkboxes
+        widget_id = getattr(event.control, "id", None) or ""
+        if not widget_id.startswith("server_checkbox_"):
+            return
+
+        # Extract server name from ID (format: "server_checkbox_{server_name}")
+        server_name = widget_id.replace("server_checkbox_", "", 1)
+
+        try:
+            from ...debug import get_debug_logger
+
+            _logger = get_debug_logger()
+            if _logger:
+                _logger.log_event(
+                    "SERVER_CHECKBOX_SHIM_RECEIVED",
+                    screen=self,
+                    context={
+                        "widget_id": widget_id,
+                        "server_name": server_name,
+                        "enabled": event.value,
+                    },
+                )
+        except Exception:
+            pass
+
+        # Post ServerEnabledToggle message (same as what ServerRowWidget would do)
+        from ...widgets.server_list import ServerEnabledToggle
+
+        self.post_message(ServerEnabledToggle(server_name, event.value))
+
     # Server management button event handlers (shims to ensure proper registration)
     @on(Button.Pressed, "#add_server")
     async def _on_add_server_button(self, event: Button.Pressed) -> None:
@@ -1354,53 +1526,3 @@ class ConfigEditorScreen(
         """Shim handler for server command input - forwards to mixin implementation."""
         await self.on_server_command_blurred(event)
 
-    # ListView event handlers with debug logging to trace event flow
-    @on(ListView.Selected)
-    async def _debug_list_view_selected(self, event: ListView.Selected) -> None:
-        """Debug shim to trace ListView.Selected events.
-
-        Note: We only log here - do NOT forward to on_list_view_selected.
-        Textual auto-discovers and calls on_list_view_selected via naming convention.
-        Explicit forwarding would cause double invocation.
-        """
-        try:
-            from ...debug import get_debug_logger
-
-            logger = get_debug_logger()
-            if logger:
-                logger.log_event(
-                    "BASE_SCREEN_LIST_VIEW_SELECTED",
-                    screen=self,
-                    context={
-                        "event_type": "ListView.Selected",
-                        "list_view_id": getattr(event.list_view, "id", None),
-                        "item": str(event.item),
-                    },
-                )
-        except Exception as e:
-            print(f"Debug logging failed in base screen ListView.Selected: {e}")
-
-    @on(ListView.Highlighted)
-    async def _debug_list_view_highlighted(self, event: ListView.Highlighted) -> None:
-        """Debug shim to trace ListView.Highlighted events.
-
-        Note: We only log here - do NOT forward to on_server_highlighted.
-        The mixin's handler is registered via @on decorator and Textual will call it.
-        Explicit forwarding would cause double invocation.
-        """
-        try:
-            from ...debug import get_debug_logger
-
-            logger = get_debug_logger()
-            if logger:
-                logger.log_event(
-                    "BASE_SCREEN_LIST_VIEW_HIGHLIGHTED",
-                    screen=self,
-                    context={
-                        "event_type": "ListView.Highlighted",
-                        "list_view_id": getattr(event.list_view, "id", None),
-                        "item": str(event.item),
-                    },
-                )
-        except Exception as e:
-            print(f"Debug logging failed in base screen ListView.Highlighted: {e}")

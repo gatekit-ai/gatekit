@@ -92,7 +92,7 @@ for handler_name, plugin_class in discover_all_plugins().items():
 # CORRECT: Same validation for all plugins
 def validate_plugin_config(handler: str, config: dict) -> None:
     plugin_class = discover_plugin_class(handler)  # Works for any plugin
-    schema = plugin_class.get_json_schema()
+    schema = plugin_class.get_config_schema()
     validate(config, schema)
 ```
 

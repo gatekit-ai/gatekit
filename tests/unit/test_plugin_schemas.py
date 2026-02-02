@@ -19,7 +19,7 @@ class TestPluginSchemas:
 
     def test_pii_plugin_schema(self):
         """Test PII plugin JSON schema is valid."""
-        raw_schema = BasicPIIFilterPlugin.get_json_schema()
+        raw_schema = BasicPIIFilterPlugin.get_config_schema()
         # Framework fields are injected by the framework layer
         schema = inject_framework_fields(raw_schema, "security")
 
@@ -52,7 +52,7 @@ class TestPluginSchemas:
 
     def test_tool_manager_plugin_schema(self):
         """Test Tool Manager plugin JSON schema is valid."""
-        raw_schema = ToolManagerPlugin.get_json_schema()
+        raw_schema = ToolManagerPlugin.get_config_schema()
         # Framework fields are injected by the framework layer
         schema = inject_framework_fields(raw_schema, "middleware")
 
@@ -91,7 +91,7 @@ class TestPluginSchemas:
 
     def test_secrets_plugin_schema(self):
         """Test Secrets plugin JSON schema is valid."""
-        raw_schema = BasicSecretsFilterPlugin.get_json_schema()
+        raw_schema = BasicSecretsFilterPlugin.get_config_schema()
         # Framework fields are injected by the framework layer
         schema = inject_framework_fields(raw_schema, "security")
 
@@ -113,7 +113,7 @@ class TestPluginSchemas:
 
     def test_csv_auditing_plugin_schema(self):
         """Test CSV auditing plugin JSON schema is valid."""
-        raw_schema = CsvAuditingPlugin.get_json_schema()
+        raw_schema = CsvAuditingPlugin.get_config_schema()
         # Auditing plugins only get enabled (no priority)
         schema = inject_framework_fields(raw_schema, "auditing")
 
@@ -143,7 +143,7 @@ class TestPluginSchemas:
 
     def test_json_auditing_plugin_schema(self):
         """Test JSON auditing plugin JSON schema is valid."""
-        raw_schema = JsonAuditingPlugin.get_json_schema()
+        raw_schema = JsonAuditingPlugin.get_config_schema()
         # Auditing plugins only get enabled (no priority)
         schema = inject_framework_fields(raw_schema, "auditing")
 
@@ -169,7 +169,7 @@ class TestPluginSchemaDefaults:
 
     def test_pii_plugin_defaults(self):
         """Test PII plugin default values are reasonable."""
-        raw_schema = BasicPIIFilterPlugin.get_json_schema()
+        raw_schema = BasicPIIFilterPlugin.get_config_schema()
         schema = inject_framework_fields(raw_schema, "security")
         properties = schema["properties"]
 
@@ -183,7 +183,7 @@ class TestPluginSchemaDefaults:
 
     def test_tool_manager_plugin_defaults(self):
         """Test Tool Manager plugin default values are reasonable."""
-        raw_schema = ToolManagerPlugin.get_json_schema()
+        raw_schema = ToolManagerPlugin.get_config_schema()
         schema = inject_framework_fields(raw_schema, "middleware")
         properties = schema["properties"]
 
@@ -193,7 +193,7 @@ class TestPluginSchemaDefaults:
 
     def test_csv_auditing_plugin_defaults(self):
         """Test CSV auditing plugin default values and required fields."""
-        raw_schema = CsvAuditingPlugin.get_json_schema()
+        raw_schema = CsvAuditingPlugin.get_config_schema()
         schema = inject_framework_fields(raw_schema, "auditing")
         properties = schema["properties"]
 
@@ -214,7 +214,7 @@ class TestPluginSchemaValidation:
 
     def test_pii_plugin_priority_constraints(self):
         """Test PII plugin priority field constraints (from framework)."""
-        raw_schema = BasicPIIFilterPlugin.get_json_schema()
+        raw_schema = BasicPIIFilterPlugin.get_config_schema()
         schema = inject_framework_fields(raw_schema, "security")
         priority_field = schema["properties"]["priority"]
 
@@ -224,7 +224,7 @@ class TestPluginSchemaValidation:
 
     def test_tool_manager_pattern_validation(self):
         """Test Tool Manager plugin tool name pattern validation."""
-        schema = ToolManagerPlugin.get_json_schema()
+        schema = ToolManagerPlugin.get_config_schema()
 
         # Test tools field pattern validation - resolve $ref
         tool_selection = schema["$defs"]["tool_selection"]
@@ -257,7 +257,7 @@ class TestPluginSchemaValidation:
     def test_schema_validation_with_jsonschema(self):
         """Test that schemas can validate actual configurations."""
         # Test Tool Manager validation with framework fields injected
-        raw_schema = ToolManagerPlugin.get_json_schema()
+        raw_schema = ToolManagerPlugin.get_config_schema()
         schema = inject_framework_fields(raw_schema, "middleware")
         validator = Draft202012Validator(schema)
 

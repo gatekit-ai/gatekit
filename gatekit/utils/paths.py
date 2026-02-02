@@ -7,7 +7,7 @@ expansion and cross-platform path handling.
 
 import os
 from pathlib import Path
-from typing import Union
+from typing import List, Union
 
 
 def expand_user_path(path: str) -> Path:
@@ -117,3 +117,45 @@ def resolve_config_path(path: str, config_dir: Union[str, Path]) -> Path:
 
     # Use ensure_absolute_path for the actual resolution
     return ensure_absolute_path(path.strip(), config_path)
+
+
+def validate_output_path(resolved_path: Path) -> List[str]:
+    """Validate that an output file path is usable.
+
+    Checks:
+    - No existing ancestor is a regular file (which would block directory creation)
+    - If the parent directory exists, it must be writable
+
+    Non-existent parent directories are allowed (they will be auto-created
+    at runtime per ADR-012 R3.3).
+
+    Args:
+        resolved_path: Fully resolved absolute path to the output file
+
+    Returns:
+        List of error messages. Empty list means the path is valid.
+    """
+    errors: List[str] = []
+    try:
+        # Walk up the path to find the first existing ancestor. If it's a
+        # regular file instead of a directory, the path is inherently invalid
+        # because directories cannot be created under a file.
+        parent_dir = resolved_path.parent
+        check = parent_dir
+        while not check.exists() and check != check.parent:
+            check = check.parent
+        if check.exists() and not check.is_dir():
+            errors.append(
+                f"Path component is a file, not a directory: {check} "
+                f"(cannot create output file: {resolved_path})"
+            )
+            return errors
+
+        if parent_dir.exists() and not os.access(parent_dir, os.W_OK):
+            errors.append(
+                f"No write permission to parent directory: {parent_dir} "
+                f"(for output file: {resolved_path})"
+            )
+    except Exception as e:
+        errors.append(f"Error validating output file path '{resolved_path}': {e}")
+    return errors

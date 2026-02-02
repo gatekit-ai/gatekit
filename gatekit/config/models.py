@@ -299,12 +299,16 @@ class UpstreamConfigSchema(BaseModel):
     """Schema for validating upstream MCP server configuration."""
 
     name: str  # Mandatory server name for consistent behavior
+    enabled: bool = True  # Whether to connect to this server
     transport: Literal["stdio", "http"] = "stdio"
     command: Optional[List[str]] = None  # For stdio transport
     url: Optional[HttpUrl] = None  # For http transport
     restart_on_failure: bool = True
     max_restart_attempts: int = 3
     server_identity: Optional[str] = None  # MCP-reported server name from handshake
+
+    # TLS configuration for HTTP transport
+    tls_verify: bool = True  # True (verify with system CA) or False (insecure)
 
     @model_validator(mode="after")
     def validate_and_normalize_command(self) -> "UpstreamConfigSchema":
@@ -343,9 +347,11 @@ class UpstreamConfig:
         url: URL for HTTP transport
         restart_on_failure: Whether to restart the server if it fails
         max_restart_attempts: Maximum number of restart attempts
+        tls_verify: TLS verification (True for system CA, False to disable)
     """
 
     name: str
+    enabled: bool = True  # Whether to connect to this server
     transport: str = "stdio"
     command: Optional[List[str]] = None
     url: Optional[str] = None
@@ -353,6 +359,7 @@ class UpstreamConfig:
     max_restart_attempts: int = 3
     is_draft: bool = False
     server_identity: Optional[str] = None  # Last-known MCP handshake name
+    tls_verify: bool = True  # True (verify with system CA) or False (insecure)
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -372,6 +379,7 @@ class UpstreamConfig:
         """Create from validated Pydantic schema."""
         return cls(
             name=schema.name,
+            enabled=schema.enabled,
             transport=schema.transport,
             command=schema.command,
             url=str(schema.url) if schema.url else None,
@@ -379,6 +387,7 @@ class UpstreamConfig:
             max_restart_attempts=schema.max_restart_attempts,
             is_draft=False,
             server_identity=schema.server_identity,
+            tls_verify=schema.tls_verify,
         )
 
     @classmethod
@@ -387,9 +396,11 @@ class UpstreamConfig:
         name: str,
         transport: str = "stdio",
         *,
+        enabled: bool = True,
         restart_on_failure: bool = True,
         max_restart_attempts: int = 3,
         server_identity: Optional[str] = None,
+        tls_verify: bool = True,
     ) -> "UpstreamConfig":
         """Construct a draft upstream that can be completed by the editor before validation.
 
@@ -401,6 +412,7 @@ class UpstreamConfig:
 
         return cls(
             name=name,
+            enabled=enabled,
             transport=transport,
             command=None,
             url=None,
@@ -408,6 +420,7 @@ class UpstreamConfig:
             max_restart_attempts=max_restart_attempts,
             is_draft=True,
             server_identity=normalized_identity,
+            tls_verify=tls_verify,
         )
 
 
@@ -456,6 +469,7 @@ class ProxyConfigSchema(BaseModel):
     http: Optional[Dict[str, Any]] = None
     plugins: Optional[PluginsConfigSchema] = None
     logging: Optional[LoggingConfigSchema] = None
+    hot_reload: Optional[Literal["auto", "enabled", "disabled"]] = "disabled"
 
     @model_validator(mode="after")
     def validate_upstreams_and_plugins(self) -> "ProxyConfigSchema":
@@ -633,6 +647,7 @@ class ProxyConfig:
         http: Optional HTTP transport configuration
         plugins: Optional plugin configuration
         logging: Optional logging configuration
+        hot_reload: Hot-reload behavior ("auto", "enabled", "disabled")
     """
 
     transport: str
@@ -641,6 +656,7 @@ class ProxyConfig:
     http: Optional[HttpConfig] = None
     plugins: Optional[PluginsConfig] = None
     logging: Optional[LoggingConfig] = None
+    hot_reload: str = "disabled"
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -698,6 +714,7 @@ class ProxyConfig:
             http=http,
             plugins=plugins,
             logging=logging,
+            hot_reload=schema.hot_reload or "disabled",
         )
 
     @classmethod
@@ -718,4 +735,5 @@ class ProxyConfig:
         instance.http = None
         instance.plugins = None
         instance.logging = None
+        instance.hot_reload = "disabled"
         return instance

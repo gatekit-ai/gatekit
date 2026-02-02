@@ -303,8 +303,9 @@ class TestProxyNotificationHandling:
         mock_connection.status = "connected"
         mock_connection.transport = notification_mock.transport
 
-        # Set up the connections dict
+        # Set up the connections dict and get_connection method
         mock_server_manager.connections = {"default": mock_connection}
+        mock_server_manager.get_connection = Mock(return_value=mock_connection)
 
         proxy = MCPProxy(
             basic_config,
@@ -379,8 +380,9 @@ class TestProxyNotificationHandling:
         mock_connection.status = "connected"
         mock_connection.transport = notification_mock.transport
 
-        # Set up the connections dict
+        # Set up the connections dict and get_connection method
         mock_server_manager.connections = {"default": mock_connection}
+        mock_server_manager.get_connection = Mock(return_value=mock_connection)
 
         proxy = MCPProxy(
             basic_config,

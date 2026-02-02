@@ -153,3 +153,44 @@ class TransportProcessError(TransportError):
         """
         super().__init__(message)
         self.exit_code = exit_code
+
+
+# HTTP Transport Errors
+
+
+class HttpTransportError(TransportError):
+    """Base class for HTTP transport errors."""
+
+    pass
+
+
+class HttpConnectionError(HttpTransportError):
+    """Failed to establish HTTP connection."""
+
+    pass
+
+
+class HttpRequestError(HttpTransportError):
+    """HTTP request failed (4xx/5xx response)."""
+
+    def __init__(self, message: str, status_code: int):
+        """Initialize HTTP request error.
+
+        Args:
+            message: Human-readable error message
+            status_code: HTTP status code from response
+        """
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class HttpSessionExpired(HttpTransportError):
+    """Server returned 404 for request with session ID (session expired)."""
+
+    pass
+
+
+class HttpSseError(HttpTransportError):
+    """SSE stream error (connection lost, parse error)."""
+
+    pass

@@ -34,6 +34,7 @@ Auditing plugins observe MCP traffic and log it without affecting message flow.
 | [JSON Lines](audit_jsonl.md) | `audit_jsonl` | Log MCP messages in JSON Lines format for log aggregation systems |
 | [CSV](audit_csv.md) | `audit_csv` | Log MCP messages in CSV format for spreadsheet analysis |
 | [Human Readable](audit_human_readable.md) | `audit_human_readable` | Log MCP messages in human-readable format for quick inspection |
+| [Token Usage Estimator](token_usage.md) | `token_usage` | Estimate token usage per server with CSV logging |
 
 ## Common Configuration
 

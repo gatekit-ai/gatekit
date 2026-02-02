@@ -187,23 +187,29 @@ class TestManualIdentityTesting:
     """Tests for the manual Test Connection workflow."""
 
     def test_get_test_connection_block_reason(self):
-        """Ensure block reasons align with transport and command requirements."""
+        """Ensure block reasons align with transport and command/URL requirements."""
         upstream_http = UpstreamConfig(name="http", transport="http", url="https://example.com")
+        upstream_http_no_url = UpstreamConfig.create_draft(name="http-no-url", transport="http")
         upstream_stdio = UpstreamConfig.create_draft(name="stdio")
 
         config = ProxyConfig(
             transport="stdio",
-            upstreams=[upstream_http, upstream_stdio],
+            upstreams=[upstream_http, upstream_http_no_url, upstream_stdio],
             timeouts=TimeoutConfig(),
         )
 
         screen = ConfigEditorScreen(Path("test.yaml"), config)
 
+        # HTTP transport with URL should allow connection testing
+        assert screen._get_test_connection_block_reason(upstream_http) is None
+
+        # HTTP transport without URL should block
         assert (
-            screen._get_test_connection_block_reason(upstream_http)
-            == "Connection testing is only available for stdio transports."
+            screen._get_test_connection_block_reason(upstream_http_no_url)
+            == "Enter a URL before testing this server."
         )
 
+        # Stdio transport without command should block
         assert (
             screen._get_test_connection_block_reason(upstream_stdio)
             == "Enter a launch command before testing this server."
@@ -250,7 +256,7 @@ class TestManualIdentityTesting:
         screen._run_worker = MagicMock()
         screen._update_identity_widgets = MagicMock()
         screen.call_after_refresh = MagicMock()
-        screen._commit_command_input = AsyncMock()
+        screen._commit_connection_input = MagicMock()
 
         with patch.object(
             ConfigEditorScreen, "app", new_callable=PropertyMock
@@ -263,7 +269,7 @@ class TestManualIdentityTesting:
             mock_app.notify.assert_called_once()
 
         screen._run_worker.assert_not_called()
-        screen._commit_command_input.assert_not_awaited()
+        screen._commit_connection_input.assert_not_called()
         assert screen._identity_test_status == {}
 
     @pytest.mark.asyncio
@@ -285,7 +291,7 @@ class TestManualIdentityTesting:
         screen._run_worker = MagicMock(side_effect=fake_run_worker)
         screen._update_identity_widgets = MagicMock()
         screen.call_after_refresh = MagicMock()
-        screen._commit_command_input = AsyncMock()
+        screen._commit_connection_input = MagicMock()
 
         with patch.object(
             ConfigEditorScreen, "app", new_callable=PropertyMock
@@ -298,14 +304,14 @@ class TestManualIdentityTesting:
             mock_app.notify.assert_not_called()
 
         screen._run_worker.assert_called_once()
-        screen._commit_command_input.assert_not_awaited()
+        screen._commit_connection_input.assert_not_called()
         status = screen._identity_test_status.get("beta")
         assert status is not None
         assert status["state"] == "testing"
 
     @pytest.mark.asyncio
-    async def test_on_test_connection_button_commits_pending_command(self):
-        """Button should parse the command input when not yet saved."""
+    async def test_on_test_connection_button_commits_pending_connection(self):
+        """Button should parse the connection input when not yet saved."""
         upstream = UpstreamConfig.create_draft(name="gamma")
         config = ProxyConfig(
             transport="stdio",
@@ -327,10 +333,11 @@ class TestManualIdentityTesting:
 
         screen.query_one = MagicMock(side_effect=fake_query_one)
 
-        async def fake_commit(value):
+        def fake_commit(value):
             upstream.command = value.split()
 
-        screen._commit_command_input = AsyncMock(side_effect=fake_commit)
+        # _commit_connection_input is synchronous, not async
+        screen._commit_connection_input = MagicMock(side_effect=fake_commit)
 
         def fake_run_worker(coro, **kwargs):
             coro.close()
@@ -347,7 +354,7 @@ class TestManualIdentityTesting:
 
             mock_app.notify.assert_not_called()
 
-        screen._commit_command_input.assert_awaited_once_with("echo hi")
+        screen._commit_connection_input.assert_called_once_with("echo hi")
         screen._run_worker.assert_called_once()
         assert upstream.command == ["echo", "hi"]
 

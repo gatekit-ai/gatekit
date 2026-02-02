@@ -8,12 +8,12 @@ aggregation systems.
 import json
 from typing import Dict, Any, List
 from datetime import datetime, timezone
-from gatekit.plugins.auditing.base import BaseAuditingPlugin
+from gatekit.plugins.auditing.base import FileAuditingPlugin
 from gatekit.protocol.messages import MCPRequest, MCPResponse, MCPNotification
 from gatekit.plugins.interfaces import ProcessingPipeline
 
 
-class JsonAuditingPlugin(BaseAuditingPlugin):
+class JsonAuditingPlugin(FileAuditingPlugin):
     """JSON Lines auditing plugin for structured logging.
 
     Logs MCP requests and responses in JSON Lines format for structured logging,
@@ -30,7 +30,7 @@ class JsonAuditingPlugin(BaseAuditingPlugin):
     DISPLAY_NAME = "JSON Lines"
     DESCRIPTION = "Log all MCP messages in JSON Lines format for debugging and auditing."
 
-    # describe_status() and get_status_file_path() inherited from BaseAuditingPlugin
+    # describe_status() and get_status_file_path() inherited from FileAuditingPlugin
 
     @classmethod
     def get_display_actions(cls, config: Dict[str, Any]) -> List[str]:
@@ -62,7 +62,7 @@ class JsonAuditingPlugin(BaseAuditingPlugin):
                    - include_response_body: Include full response result/error (default: False)
                    - include_notification_body: Include full notification parameters (default: False)
                    - max_body_size: Maximum size in bytes for logged message bodies (default: 10240, 0 = unlimited)
-                   Plus all BaseAuditingPlugin options (output_file, etc.)
+                   Plus all FileAuditingPlugin options (output_file, etc.)
 
         Raises:
             ValueError: If configuration is invalid
@@ -91,7 +91,7 @@ class JsonAuditingPlugin(BaseAuditingPlugin):
         self._validate_config()
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
+    def get_config_schema(cls) -> Dict[str, Any]:
         """Return JSON Schema for JSON Lines Auditing configuration."""
         return {
             "$schema": "https://json-schema.org/draft/2020-12/schema",

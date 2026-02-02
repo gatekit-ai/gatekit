@@ -119,7 +119,7 @@ class CallTracePlugin(MiddlewarePlugin):
         self._include_timestamp = trace_fields.get("timestamp", True)
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
+    def get_config_schema(cls) -> Dict[str, Any]:
         """Return JSON schema for TUI configuration.
 
         This schema drives the TUI configuration dialog, showing how to implement

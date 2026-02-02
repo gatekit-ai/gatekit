@@ -98,7 +98,7 @@ class BasicPIIFilterPlugin(SecurityPlugin):
         return ["Setup"]
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
+    def get_config_schema(cls) -> Dict[str, Any]:
         """Return JSON Schema for PII Filter configuration."""
         return {
             "$schema": "https://json-schema.org/draft/2020-12/schema",

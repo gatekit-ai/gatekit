@@ -1,6 +1,6 @@
-"""Tests for BaseAuditingPlugin core functionality.
+"""Tests for FileAuditingPlugin (formerly BaseAuditingPlugin) core functionality.
 
-This test suite covers the foundational functionality of the BaseAuditingPlugin class:
+This test suite covers the foundational functionality of the FileAuditingPlugin class:
 - Configuration and initialization
 - Path resolution and validation
 - Request timestamp tracking and cleanup
@@ -15,7 +15,7 @@ import threading
 import time
 from pathlib import Path
 
-from gatekit.plugins.auditing.base import BaseAuditingPlugin
+from gatekit.plugins.auditing.base import FileAuditingPlugin, BaseAuditingPlugin
 from gatekit.plugins.interfaces import (
     PluginResult,
     ProcessingPipeline,
@@ -26,7 +26,7 @@ from gatekit.plugins.interfaces import (
 from gatekit.protocol.messages import MCPRequest, MCPResponse, MCPNotification
 
 
-class MockAuditingPlugin(BaseAuditingPlugin):
+class MockAuditingPlugin(FileAuditingPlugin):
     """Concrete implementation using new _format_*_entry API.
 
     Captures emitted log lines in-memory for assertions instead of relying on
@@ -449,3 +449,68 @@ class TestBaseClassEnhancements:
 
     # Placeholder for any future base-level behaviors needing verification post-refactor.
     pass
+
+
+class TestBackwardCompatAlias:
+    """Test that BaseAuditingPlugin alias works for backward compatibility."""
+
+    def test_alias_is_same_class(self):
+        """BaseAuditingPlugin should be an alias for FileAuditingPlugin."""
+        assert BaseAuditingPlugin is FileAuditingPlugin
+
+    def test_subclass_via_alias(self):
+        """Subclasses using BaseAuditingPlugin should still work."""
+        assert issubclass(MockAuditingPlugin, BaseAuditingPlugin)
+
+
+class TestResolveAndValidatePaths:
+    """Test FileAuditingPlugin.resolve_and_validate_paths classmethod."""
+
+    def test_valid_path_returns_no_errors(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = {"output_file": "audit.log"}
+            errors = FileAuditingPlugin.resolve_and_validate_paths(
+                config, Path(tmpdir)
+            )
+            assert errors == []
+
+    def test_no_output_file_returns_no_errors(self):
+        errors = FileAuditingPlugin.resolve_and_validate_paths({}, Path("/tmp"))
+        assert errors == []
+
+    def test_unwritable_directory_returns_error(self):
+        """Mock os.access to simulate unwritable directory."""
+        import os
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = {"output_file": "audit.log"}
+            tmpdir_resolved = Path(tmpdir).resolve()
+            original_access = os.access
+
+            def mock_access(path, mode):
+                if mode == os.W_OK and Path(path).resolve() == tmpdir_resolved:
+                    return False
+                return original_access(path, mode)
+
+            with patch("os.access", side_effect=mock_access):
+                errors = FileAuditingPlugin.resolve_and_validate_paths(
+                    config, Path(tmpdir)
+                )
+                assert len(errors) == 1
+                assert "No write permission" in errors[0]
+
+    def test_no_instance_created(self):
+        """Verify no instance is created during classmethod validation."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = {"output_file": "audit.log"}
+            with patch.object(
+                FileAuditingPlugin, "__init__", side_effect=AssertionError("Should not be called")
+            ):
+                # classmethod should NOT trigger __init__
+                errors = FileAuditingPlugin.resolve_and_validate_paths(
+                    config, Path(tmpdir)
+                )
+                assert errors == []

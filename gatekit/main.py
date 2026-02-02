@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 import logging.handlers
+import signal
 import sys
 import time
 from pathlib import Path
@@ -163,9 +164,55 @@ def run_gateway(config_path: Path, verbose: bool = False) -> None:
     asyncio.run(run_proxy(config_path, verbose))
 
 
+async def _signal_shutdown(proxy: "MCPProxy", sig: signal.Signals) -> None:
+    """Cleanup plugins and upstream servers, then exit in response to a signal.
+
+    Called as a fire-and-forget task from the signal handler. Flushes plugin
+    resources (e.g. buffered audit data), disconnects all upstream server
+    process groups, then hard-exits. We can't rely on the normal proxy
+    shutdown path because handle_messages() is blocked on stdin and won't
+    respond to cancellation or stop().
+    """
+    _logger = logging.getLogger(__name__)
+    try:
+        # Flush plugin resources first (e.g. token usage CSV buffer).
+        # This must happen before upstream disconnect since some plugins
+        # may need server state during cleanup.
+        if hasattr(proxy, "_plugin_manager"):
+            try:
+                _logger.info("Signal shutdown: cleaning up plugins...")
+                await asyncio.wait_for(
+                    proxy._plugin_manager.cleanup(), timeout=3.0
+                )
+                _logger.info("Signal shutdown: plugins cleaned up")
+            except asyncio.TimeoutError:
+                _logger.warning("Signal shutdown: timed out cleaning up plugins")
+            except Exception as e:
+                _logger.warning(f"Signal shutdown: error cleaning up plugins: {e}")
+
+        _logger.info("Signal shutdown: disconnecting upstream servers...")
+        # Go directly to the server manager to kill process groups.
+        # This is the critical path — everything else is best-effort.
+        if hasattr(proxy, "_server_manager"):
+            await asyncio.wait_for(
+                proxy._server_manager.disconnect_all(), timeout=5.0
+            )
+            _logger.info("Signal shutdown: upstream servers disconnected")
+    except asyncio.TimeoutError:
+        _logger.warning("Signal shutdown: timed out disconnecting servers")
+    except Exception as e:
+        _logger.warning(f"Signal shutdown: error during cleanup: {e}")
+    finally:
+        _logger.info(f"Signal shutdown: exiting due to {sig.name}")
+        # Hard exit — the stdin read loop won't unblock otherwise
+        import os
+        os._exit(0)
+
+
 async def run_proxy(config_path: Path, verbose: bool = False) -> None:
     """Run the Gatekit proxy server."""
     logger = None
+    proxy = None
     try:
         # Load configuration first to get logging settings
         config_loader = ConfigLoader()
@@ -179,7 +226,23 @@ async def run_proxy(config_path: Path, verbose: bool = False) -> None:
 
         # Create and start proxy
         logger.info("Starting Gatekit MCP Gateway")
-        proxy = MCPProxy(config, config_loader.config_directory)
+        proxy = MCPProxy(config, config_loader.config_directory, config_path=config_path)
+
+        # Register signal handlers so that SIGTERM/SIGINT trigger proxy cleanup
+        # instead of killing the process without running disconnect() on children.
+        # The handler schedules an async cleanup coroutine that disconnects all
+        # upstream servers (killing their process groups), then exits.
+        loop = asyncio.get_running_loop()
+
+        def _signal_handler(sig: signal.Signals) -> None:
+            if logger:
+                logger.info(f"Received {sig.name}, initiating shutdown...")
+            loop.create_task(_signal_shutdown(proxy, sig))
+
+        if sys.platform != "win32":
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                loop.add_signal_handler(sig, _signal_handler, sig)
+
         logger.info("Gatekit is ready and accepting connections")
         await proxy.run()
 

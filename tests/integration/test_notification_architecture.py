@@ -94,6 +94,12 @@ class TestNotificationArchitecture:
             message_iter = iter(messages)
 
             async def mock_readline():
+                # Wait for requests to be registered before delivering messages
+                for _ in range(50):
+                    if len(transport._pending_requests) >= 2:
+                        break
+                    await asyncio.sleep(0.01)
+
                 try:
                     message = next(message_iter)
                     return (json.dumps(message) + "\n").encode("utf-8")
@@ -104,19 +110,15 @@ class TestNotificationArchitecture:
 
             mock_process.stdout.readline.side_effect = mock_readline
 
-            # Send requests
+            # Send requests concurrently
             request_1 = MCPRequest(jsonrpc="2.0", method="test", id="req-1")
             request_2 = MCPRequest(jsonrpc="2.0", method="test", id="req-2")
 
-            await transport.send_message(request_1)
-            await transport.send_message(request_2)
-
-            # Give dispatcher time to process all messages
-            await asyncio.sleep(0.2)
-
-            # Verify we can receive both responses
-            response_1 = await transport.receive_message()
-            response_2 = await transport.receive_message()
+            # Use send_and_receive concurrently
+            response_1, response_2 = await asyncio.gather(
+                transport.send_and_receive(request_1),
+                transport.send_and_receive(request_2),
+            )
 
             # Verify correct correlation
             responses_by_id = {response_1.id: response_1, response_2.id: response_2}
@@ -191,24 +193,34 @@ class TestNotificationArchitecture:
                     await asyncio.sleep(10)
                     return b""
 
-            mock_process.stdout.readline.side_effect = mock_readline
+            async def mock_readline_with_wait():
+                # Wait for all requests to be registered before delivering responses
+                for _ in range(100):
+                    if len(transport._pending_requests) >= 10:
+                        break
+                    await asyncio.sleep(0.01)
 
-            # Send all requests first
+                try:
+                    message = next(message_iter)
+                    # Small delay to simulate network latency
+                    await asyncio.sleep(0.01)
+                    return (json.dumps(message) + "\n").encode("utf-8")
+                except StopIteration:
+                    await asyncio.sleep(10)
+                    return b""
+
+            mock_process.stdout.readline.side_effect = mock_readline_with_wait
+
+            # Send all requests concurrently
             requests = [
                 MCPRequest(jsonrpc="2.0", method="test", id=f"req-{i}")
                 for i in range(10)
             ]
-            for req in requests:
-                await transport.send_message(req)
 
-            # Give dispatcher time to process messages
-            await asyncio.sleep(0.3)
-
-            # Verify all requests get responses
-            responses = []
-            for _ in range(10):
-                resp = await transport.receive_message()
-                responses.append(resp)
+            # Use send_and_receive concurrently
+            responses = await asyncio.gather(
+                *[transport.send_and_receive(req) for req in requests]
+            )
 
             # Verify no requests were lost
             response_ids = {resp.id for resp in responses}
@@ -265,15 +277,11 @@ class TestNotificationArchitecture:
 
             mock_process.stdout.readline.side_effect = mock_readline
 
-            # Send a request
+            # Send a request using send_and_receive
             request = MCPRequest(jsonrpc="2.0", method="test", id="req-1")
-            await transport.send_message(request)
-
-            # Give dispatcher time to process
-            await asyncio.sleep(0.1)
+            response = await transport.send_and_receive(request)
 
             # Should get the valid response
-            response = await transport.receive_message()
             assert response.id == "req-1"
             assert response.result == {"data": "response-1"}
 

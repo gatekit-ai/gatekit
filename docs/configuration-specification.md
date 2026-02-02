@@ -1,6 +1,6 @@
 # Gatekit Configuration Specification
 
-**Version**: 0.1.0  
+**Version**: 0.2.0
 **Status**: Authoritative Reference  
 
 > **Note**: This document describes the ACTUAL configuration format as implemented. The Pydantic schemas in [`gatekit/config/models.py`](../gatekit/config/models.py) define the validation rules and accepted fields.
@@ -130,6 +130,8 @@ Each upstream server has these fields:
 | `restart_on_failure` | boolean | No | `true` | Auto-restart on failure |
 | `max_restart_attempts` | integer | No | `3` | Max restart attempts |
 | `server_identity` | string | No | `null` | MCP-reported server name |
+| `enabled` | boolean | No | `true` | Enable/disable this server |
+| `tls_verify` | boolean | No | `true` | TLS verification (http only) |
 
 **Command Format:**
 
@@ -145,6 +147,52 @@ upstreams:
     transport: "http"
     url: "https://example.com/mcp"
 ```
+
+#### HTTP Transport Configuration
+
+HTTP transport connects to remote MCP servers using the Streamable HTTP protocol. This is useful for:
+- Cloud-hosted MCP servers
+- Multi-tenant MCP deployments
+- Servers behind load balancers
+
+**HTTP-Specific Upstream Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `url` | string | - | Required. The MCP server endpoint URL |
+| `tls_verify` | boolean | `true` | Enable TLS certificate verification |
+
+**TLS Verification (`tls_verify`):**
+
+- **`true`** (default): Verify server certificates using system CA bundle
+- **`false`**: Disable TLS verification (insecure - for testing only)
+
+**HTTP Transport Examples:**
+
+```yaml
+# HTTP upstream with default TLS (system CA)
+- name: "remote_api"
+  transport: "http"
+  url: "https://api.example.com/mcp"
+
+# HTTP upstream with TLS disabled (testing only - insecure!)
+- name: "local_dev"
+  transport: "http"
+  url: "http://localhost:8123/mcp"
+  tls_verify: false
+```
+
+**Security Notes:**
+
+- **Always use HTTPS in production.** HTTP URLs should only be used for local development.
+- **Setting `tls_verify: false` is insecure** and should only be used for testing with self-signed certificates.
+
+**Session Handling:**
+
+HTTP transport uses MCP's session management protocol:
+- **Session ID**: Automatically extracted from server response headers and included in subsequent requests
+- **Session expiry**: If a session expires (server returns 404), Gatekit handles it transparently
+- **Session termination**: On disconnect, Gatekit sends a DELETE request to terminate the session cleanly
 
 #### Important: Environment Variables
 
@@ -354,7 +402,7 @@ Validation enforces:
 
 ## Complete Working Example
 
-The following example shows a complete working configuration with inline comments.
+The following example shows a complete working configuration with inline comments, including both stdio and HTTP upstreams.
 
 ```yaml
 # Complete example configuration
@@ -362,11 +410,17 @@ proxy:
   transport: stdio
 
   upstreams:
+    # stdio upstream - local MCP server spawned as subprocess
     - name: "filesystem"
       command: ["npx", "@modelcontextprotocol/server-filesystem", "/Users/user/Documents"]
       restart_on_failure: true
       max_restart_attempts: 3
       server_identity: "secure-filesystem-server"
+
+    # HTTP upstream - remote MCP server with default TLS
+    - name: "remote_api"
+      transport: "http"
+      url: "https://api.example.com/mcp"
 
   timeouts:
     connection_timeout: 60
@@ -402,6 +456,13 @@ plugins:
             - tool: "read_file"
             - tool: "write_file"
             - tool: "list_directory"
+    remote_api:
+      - handler: "tool_manager"
+        config:
+          enabled: true
+          tools:
+            - tool: "search"
+            - tool: "query"
 
   auditing:
     _global:
@@ -415,6 +476,11 @@ plugins:
           max_body_size: 10000
           # critical: true is the default - uncomment below for development
           # critical: false
+
+      - handler: "token_usage"
+        config:
+          enabled: true
+          output_file: "logs/token_usage.csv"
 
 logging:
   level: "INFO"
@@ -493,7 +559,7 @@ plugins:
 
 ## Version History
 
-- **0.1.0**: Current specification
+- **0.2.0**: Current specification — added `enabled` field for upstreams, HTTP transport, token usage plugin
 - **0.1.0**: Initial release with handler-based plugin system
 
 ---

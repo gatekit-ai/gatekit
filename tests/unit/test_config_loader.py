@@ -748,3 +748,96 @@ class TestCommandFormatSupport:
 
         with pytest.raises(ConfigError):
             self.loader.load_from_dict(config_dict)
+
+    def test_load_hot_reload_auto(self):
+        """Test loading config with hot_reload set to auto."""
+        config_dict = {
+            "proxy": {
+                "transport": "stdio",
+                "upstreams": [
+                    {"name": "test_server", "command": ["python", "-m", "server"]}
+                ],
+                "hot_reload": "auto",
+            }
+        }
+
+        config = self.loader.load_from_dict(config_dict)
+        assert config.hot_reload == "auto"
+
+    def test_load_hot_reload_enabled(self):
+        """Test loading config with hot_reload set to enabled."""
+        config_dict = {
+            "proxy": {
+                "transport": "stdio",
+                "upstreams": [
+                    {"name": "test_server", "command": ["python", "-m", "server"]}
+                ],
+                "hot_reload": "enabled",
+            }
+        }
+
+        config = self.loader.load_from_dict(config_dict)
+        assert config.hot_reload == "enabled"
+
+    def test_load_hot_reload_disabled(self):
+        """Test loading config with hot_reload set to disabled."""
+        config_dict = {
+            "proxy": {
+                "transport": "stdio",
+                "upstreams": [
+                    {"name": "test_server", "command": ["python", "-m", "server"]}
+                ],
+                "hot_reload": "disabled",
+            }
+        }
+
+        config = self.loader.load_from_dict(config_dict)
+        assert config.hot_reload == "disabled"
+
+    def test_load_hot_reload_defaults_to_disabled(self):
+        """Test that hot_reload defaults to disabled when not specified."""
+        config_dict = {
+            "proxy": {
+                "transport": "stdio",
+                "upstreams": [
+                    {"name": "test_server", "command": ["python", "-m", "server"]}
+                ],
+            }
+        }
+
+        config = self.loader.load_from_dict(config_dict)
+        assert config.hot_reload == "disabled"
+
+    def test_load_hot_reload_invalid_value(self):
+        """Test that invalid hot_reload values are rejected."""
+        config_dict = {
+            "proxy": {
+                "transport": "stdio",
+                "upstreams": [
+                    {"name": "test_server", "command": ["python", "-m", "server"]}
+                ],
+                "hot_reload": "invalid_value",
+            }
+        }
+
+        with pytest.raises(ConfigError):
+            self.loader.load_from_dict(config_dict)
+
+    def test_load_hot_reload_from_yaml_file(self):
+        """Test loading hot_reload configuration from YAML file."""
+        yaml_content = """
+proxy:
+  transport: stdio
+  upstreams:
+    - name: "test_server"
+      command: ["python", "-m", "test_server"]
+  hot_reload: enabled
+"""
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(yaml_content)
+            f.flush()
+
+            config = self.loader.load_from_file(Path(f.name))
+
+            assert config.hot_reload == "enabled"

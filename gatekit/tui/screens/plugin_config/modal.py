@@ -299,6 +299,14 @@ class PluginConfigModal(ModalScreen[Optional[Dict[str, Any]]]):
         color: $text-disabled;
     }
 
+    /* Plugin warning styling */
+    .plugin-warning {
+        color: $warning;
+        height: auto;
+        margin-bottom: 1;
+        padding: 0 1;
+    }
+
     /* Plugin description styling */
     .plugin-description {
         color: $text-muted;
@@ -422,6 +430,14 @@ class PluginConfigModal(ModalScreen[Optional[Dict[str, Any]]]):
                     description = getattr(self.plugin_class, "DESCRIPTION", "")
                     if description:
                         yield SelectableStatic(description, classes="plugin-description")
+
+                    # Plugin warnings (if any)
+                    try:
+                        if hasattr(self.plugin_class, "get_config_warnings"):
+                            for warning in self.plugin_class.get_config_warnings():
+                                yield SelectableStatic(f"⚠ {warning}", classes="plugin-warning")
+                    except Exception:
+                        yield SelectableStatic("⚠ Failed to check plugin warnings", classes="plugin-warning")
 
                     # Plugin source path with Open and Copy buttons (only if path is available)
                     if plugin_path:

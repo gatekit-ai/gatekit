@@ -1,6 +1,6 @@
-"""Base auditing plugin with shared functionality for Gatekit MCP gateway.
+"""File-based auditing plugin with shared functionality for Gatekit MCP gateway.
 
-This module provides the BaseAuditingPlugin class that contains common functionality
+This module provides the FileAuditingPlugin class that contains common functionality
 for all format-specific auditing plugins including file management, path resolution,
 error handling, and logging infrastructure.
 """
@@ -25,19 +25,20 @@ from gatekit.plugins.interfaces import (
     StageOutcome,
 )
 from gatekit.protocol.messages import MCPRequest, MCPResponse, MCPNotification
-from gatekit.utils.paths import resolve_config_path, expand_user_path
+from gatekit.utils.paths import resolve_config_path, expand_user_path, validate_output_path
 
 
 # Compile ANSI escape regex once at module level for performance
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
-class BaseAuditingPlugin(AuditingPlugin, PathResolvablePlugin):
-    """Base class for all auditing plugins with shared functionality.
+class FileAuditingPlugin(AuditingPlugin, PathResolvablePlugin):
+    """File-based auditing plugin with shared functionality.
 
-    Provides common functionality for:
-    - File management and rotation
-    - Path resolution
+    Provides common functionality for auditing plugins that write to
+    rotating log files:
+    - File management and rotation via RotatingFileHandler
+    - Path resolution relative to config directory
     - Error handling (critical vs non-critical)
     - Logging infrastructure
     - Request timestamp tracking for duration calculation
@@ -45,6 +46,10 @@ class BaseAuditingPlugin(AuditingPlugin, PathResolvablePlugin):
 
     Format-specific plugins should inherit from this class and implement
     the abstract formatting methods.
+
+    Plugins with different file I/O needs (e.g. CSV buffering, JSON state
+    with file locking) should inherit from AuditingPlugin directly and
+    implement PathResolvablePlugin separately.
     """
 
     @classmethod
@@ -271,29 +276,37 @@ class BaseAuditingPlugin(AuditingPlugin, PathResolvablePlugin):
         Returns:
             List[str]: List of validation error messages, empty if no errors
         """
-        errors = []
+        return validate_output_path(Path(self.output_file))
 
-        # Validate output file path
+    @classmethod
+    def resolve_and_validate_paths(
+        cls, config: Dict[str, Any], config_directory: Optional[Path]
+    ) -> List[str]:
+        """Validate paths WITHOUT instantiation. Returns error messages.
+
+        Resolves the ``output_file`` config value relative to
+        *config_directory* and checks that the parent directory is writable.
+
+        Args:
+            config: Plugin configuration dictionary
+            config_directory: Directory containing the configuration file
+
+        Returns:
+            List of validation error messages. Empty list means all paths valid.
+        """
+        raw_output = config.get("output_file")
+        if not raw_output:
+            return []
+
         try:
-            output_path = Path(self.output_file)
-            parent_dir = output_path.parent
-
-            # Check if parent directory exists and is writable
-            # Note: If directory doesn't exist, it will be auto-created at runtime
-            # (per ADR-012 and R3.3: "Create parent directories if they don't exist")
-            if parent_dir.exists():
-                # Only check write permissions if directory already exists
-                if not os.access(parent_dir, os.W_OK):
-                    errors.append(
-                        f"No write permission to parent directory: {parent_dir} (for output file: {self.output_file})"
-                    )
-
+            expanded = os.path.expandvars(raw_output)
+            if config_directory:
+                resolved = resolve_config_path(expanded, config_directory)
+            else:
+                resolved = Path(expand_user_path(expanded))
+            return validate_output_path(resolved)
         except Exception as e:
-            errors.append(
-                f"Error validating output file path '{self.output_file}': {e}"
-            )
-
-        return errors
+            return [f"Error resolving output_file path '{raw_output}': {e}"]
 
     def _check_windows_directory_security(
         self, parent: Path, resolved: Path
@@ -1277,3 +1290,7 @@ class BaseAuditingPlugin(AuditingPlugin, PathResolvablePlugin):
         raise NotImplementedError(
             f"Subclass {self.__class__.__name__} must implement _format_notification_entry"
         )
+
+
+# Backward-compatibility alias
+BaseAuditingPlugin = FileAuditingPlugin

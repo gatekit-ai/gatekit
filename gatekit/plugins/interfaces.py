@@ -128,7 +128,7 @@ class PluginInterface(ABC):  # noqa: B024
         return ["Setup"]
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
+    def get_config_schema(cls) -> Dict[str, Any]:
         """Return JSON Schema for this plugin's configuration.
 
         Returns:
@@ -141,6 +141,110 @@ class PluginInterface(ABC):  # noqa: B024
             "properties": {},
             "additionalProperties": False,
         }
+
+    @classmethod
+    def get_config_warnings(cls) -> List[str]:
+        """Return runtime warnings for display in the TUI plugin config modal.
+
+        Plugins can override this to surface environment-specific warnings,
+        such as missing optional dependencies or degraded functionality.
+
+        Returns:
+            List of warning strings. Empty list means no warnings.
+        """
+        return []
+
+    @classmethod
+    def get_json_schema(cls) -> Dict[str, Any]:
+        """DEPRECATED: Use get_config_schema() instead. Will be removed in 0.2.0."""
+        import warnings
+
+        warnings.warn(
+            "get_json_schema() is deprecated, use get_config_schema() instead. "
+            "Will be removed in 0.2.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.get_config_schema()
+
+    @classmethod
+    def get_output_schema(cls) -> Optional[Dict[str, Any]]:
+        """Return output display schema for this plugin.
+
+        Plugins that produce observable output (metrics, counters, etc.) can
+        declare their display capabilities via this method. The TUI uses this
+        to dynamically add columns to server lists and other displays.
+
+        Returns:
+            None if plugin has no output display, or a dict describing columns
+            and actions. Example::
+
+                {
+                    "server_columns": [
+                        {
+                            "key": "input",            # Required. Unique key within this plugin.
+                            "value_format": "humanized_number",  # Required. "humanized_number" or "raw".
+                            "label": "↑",              # Optional. Prefix shown before value.
+                            "tooltip": "Input tokens (into LLM)",  # Optional. Hover text.
+                            "width": 7,                # Optional (default 7). Total cell width including label.
+                        },
+                        {
+                            "key": "output",
+                            "value_format": "humanized_number",
+                            "label": "↓",
+                            "tooltip": "Output tokens (from LLM)",
+                            "width": 7,
+                        },
+                    ],
+                    "state_file_key": "state_file",  # Config key holding the state file path.
+                    "context_menu": [
+                        # Each entry: label (display text) and method (classmethod name).
+                        # If label contains {server_name}, TUI interpolates it and passes
+                        # server_name to the method. Otherwise server_name=None (global action).
+                        # Method signature: cls, state_file_path: Path, server_name: Optional[str] = None
+                        # Method returns a str (notification message) or raises an exception.
+                        # Optional confirm_title/confirm_message: if present, TUI shows a
+                        # confirmation dialog before executing. {server_name} is interpolated.
+                        # If absent, the action executes immediately on selection.
+                        {
+                            "label": "Reset '{server_name}'",
+                            "method": "reset_counters",
+                            "confirm_title": "Reset counters for '{server_name}'?",
+                            "confirm_message": "This cannot be undone.",
+                        },
+                        {"label": "Reset all servers", "method": "reset_counters"},
+                    ],
+                }
+
+        Notes:
+            - Handler names must not contain ``__`` (double underscore).
+            - State files must be JSON format.
+            - ``width`` is the total cell width including the label prefix.
+            - ``context_menu`` method names must be valid Python identifiers
+              and must not start with ``_``.
+        """
+        return None
+
+    @classmethod
+    def parse_server_values(
+        cls, state_data: Dict[str, Any], server_name: str
+    ) -> Dict[str, Union[int, float]]:
+        """Parse state file data to extract per-server column values.
+
+        Called by the TUI to read column values from the plugin's state file.
+        Keys in the returned dict must match the ``key`` fields declared in
+        ``server_columns`` of :meth:`get_output_schema`.
+
+        Args:
+            state_data: Parsed JSON content of the state file.
+            server_name: Name of the server to extract values for.
+
+        Returns:
+            Dict mapping column key to numeric value,
+            e.g. ``{"input": 150, "output": 320}`` or ``{"rate": 3.7}``.
+            Return an empty dict if no data is available for the server.
+        """
+        return {}
 
 
 class MiddlewarePlugin(PluginInterface):
@@ -430,6 +534,28 @@ class PathResolvablePlugin(ABC):
             ["Log directory does not exist: /invalid/path"]
             ["Output file parent directory is not writable: /readonly/dir"]
             []  # No validation errors
+        """
+        pass
+
+    @classmethod
+    @abstractmethod
+    def resolve_and_validate_paths(
+        cls, config: Dict[str, Any], config_directory: Optional[Path]
+    ) -> List[str]:
+        """Validate paths WITHOUT instantiation. Returns error messages.
+
+        This classmethod performs static path validation — resolving paths
+        relative to the config directory and checking writability — without
+        creating a plugin instance. This avoids side effects (timers, file
+        handlers, state restoration) that occur during normal instantiation.
+
+        Args:
+            config: Plugin configuration dictionary
+            config_directory: Directory containing the configuration file,
+                or None if not available
+
+        Returns:
+            List of validation error messages. Empty list means all paths are valid.
         """
         pass
 

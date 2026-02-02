@@ -1,5 +1,6 @@
 """Unit tests for CLI main entry point."""
 
+import asyncio
 import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -215,9 +216,9 @@ class TestGatewayIntegration:
 
                     await run_proxy(config_path, verbose=False)
 
-                    # Verify proxy was created with config and config_directory and run
+                    # Verify proxy was created with config, config_directory, and config_path
                     mock_proxy_class.assert_called_once_with(
-                        mock_config, mock_loader.config_directory
+                        mock_config, mock_loader.config_directory, config_path=config_path
                     )
                     # Use assert_awaited_once for async mock
                     mock_proxy.run.assert_awaited_once()

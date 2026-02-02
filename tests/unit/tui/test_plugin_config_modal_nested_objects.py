@@ -14,7 +14,7 @@ class MockNestedPlugin(SecurityPlugin):
     DISPLAY_SCOPE = "global"
 
     @classmethod
-    def get_json_schema(cls):
+    def get_config_schema(cls):
         return {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
@@ -216,7 +216,7 @@ class TestPluginConfigModalNestedObjects:
 
         class MockSimpleObjectPlugin(SecurityPlugin):
             @classmethod
-            def get_json_schema(cls):
+            def get_config_schema(cls):
                 return {
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
                     "type": "object",

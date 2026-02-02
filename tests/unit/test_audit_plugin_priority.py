@@ -73,13 +73,13 @@ class TestAuditPluginPriority:
 
     def test_audit_plugin_schema_no_priority(self):
         """Verify audit plugin schemas don't include priority field."""
-        schema = JsonAuditingPlugin.get_json_schema()
+        schema = JsonAuditingPlugin.get_config_schema()
         assert "priority" not in schema.get(
             "properties", {}
         ), "Audit plugin schema should not include priority field"
 
         # Check another audit plugin
-        schema2 = LineAuditingPlugin.get_json_schema()
+        schema2 = LineAuditingPlugin.get_config_schema()
         assert "priority" not in schema2.get(
             "properties", {}
         ), "Human readable audit plugin schema should not include priority"
@@ -459,7 +459,7 @@ class TestAuditPluginSchemasNoPriority:
         # Check each discovered policy
         for policy_name, plugin_cls in policies.items():
             # Get schema and verify no priority field
-            schema = plugin_cls.get_json_schema()
+            schema = plugin_cls.get_config_schema()
             assert "priority" not in schema.get("properties", {}), (
                 f"Audit plugin '{policy_name}' ({plugin_cls.__name__}) "
                 f"schema should not include priority field"

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Token Usage Estimator - Gatekit Documentation</title>
+  <meta name="description" content="Estimate token usage per MCP server using tiktoken. Track input and output tokens per tool, export to CSV for analysis, and monitor live counters in the TUI.">
+  <link rel="icon" type="image/png" href="../../../favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../../../css/style.css">
+  <script defer src="https://api.pirsch.io/pa.js" id="pianjs" data-code="GUYxLQ7LGQThWCqSrzrtg2qOOArCNKPS"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../../../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../../../docs/getting-started.html">Get started</a>
+        <a href="../../../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="token-usage-estimator">Token Usage Estimator</h1>
+<p>Estimate token usage per MCP server using tiktoken. Track input and output tokens per tool, export to CSV for analysis, and monitor live counters in the TUI.</p>
+<h2 id="quick-reference">Quick Reference</h2>
+<table>
+<thead>
+<tr>
+  <th>Property</th>
+  <th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Handler</td>
+  <td><code>token_usage</code></td>
+</tr>
+<tr>
+  <td>Type</td>
+  <td>Auditing</td>
+</tr>
+<tr>
+  <td>Scope</td>
+  <td>Global</td>
+</tr>
+<tr>
+  <td>Default Critical</td>
+  <td><code>false</code> (fail-open — observability should not block traffic)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-it-works">How It Works</h2>
+<p>The Token Usage Estimator plugin:</p>
+<ol>
+<li>Intercepts MCP requests, responses, and notifications</li>
+<li>Estimates token counts using tiktoken's <code>cl100k_base</code> encoding</li>
+<li>Tracks input tokens (server responses into LLM) and output tokens (tool call requests from LLM) per tool</li>
+<li>Writes per-event CSV rows for historical analysis</li>
+<li>Maintains a JSON state file for live TUI display</li>
+</ol>
+<blockquote>
+<p><strong>Accuracy Note:</strong> Token estimates use tiktoken's <code>cl100k_base</code> tokenizer when available (~88% accurate), or a pure-Python heuristic fallback otherwise. Either way, these numbers are for monitoring and trend analysis, not exact billing data. See <a href="#estimation-methods">Estimation Methods</a> below.</p>
+</blockquote>
+<h2 id="estimation-methods">Estimation Methods</h2>
+<p>The plugin uses two estimation methods, selected automatically:</p>
+<h3 id="tiktoken-default-on-macoslinux">tiktoken (default on macOS/Linux)</h3>
+<p>Uses OpenAI's <code>cl100k_base</code> tokenizer for ~88% accuracy across models. This is a compiled library installed automatically on macOS and Linux.</p>
+<h3 id="heuristic-fallback-automatic-on-windows">Heuristic fallback (automatic on Windows)</h3>
+<p>A pure-Python estimator that uses <code>max(chars/4, words*1.33)</code> as a rough approximation. Less accurate than tiktoken but requires no native dependencies. The heuristic is used automatically when tiktoken is unavailable.</p>
+<h3 id="windows-and-wdac">Windows and WDAC</h3>
+<p>tiktoken is not installed on Windows by default because its compiled Rust extension (<code>.pyd</code> file) can be blocked by <a href="https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/appcontrol">Windows Defender Application Control (WDAC)</a>, which prevents Gatekit from starting entirely.</p>
+<p>If your Windows environment does not enforce WDAC (or your IT admin has whitelisted Python extensions), you can install tiktoken manually for better accuracy:</p>
+<pre><code class="language-text">pip install tiktoken
+</code></pre>
+<p>If tiktoken is installed but blocked by WDAC at runtime, the plugin falls back to heuristic estimation automatically. To resolve the WDAC block, your IT administrator can create a supplemental WDAC policy that whitelists the Python installation directory using file path rules or publisher-based rules. See <a href="https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/appcontrol">Microsoft's App Control documentation</a> for details.</p>
+<h2 id="tui-features">TUI Features</h2>
+<p>When enabled, the Token Usage Estimator adds live columns to the TUI server list:</p>
+<table>
+<thead>
+<tr>
+  <th>Column</th>
+  <th>Label</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>Input tokens</td>
+  <td>↑</td>
+  <td>Server responses into the LLM</td>
+</tr>
+<tr>
+  <td>Output tokens</td>
+  <td>↓</td>
+  <td>Tool call requests from the LLM</td>
+</tr>
+</tbody>
+</table>
+<p>Token counts are displayed in humanized format (e.g., <code>1.2k</code>, <code>3.4M</code>).</p>
+<p><strong>Context menu actions</strong> (right-click or select a token column):</p>
+<ul>
+<li>Reset counters for a specific server</li>
+<li>Reset all server counters</li>
+</ul>
+<h2 id="configuration-reference">Configuration Reference</h2>
+<h3 id="output_file">output_file</h3>
+<p>Path to the CSV log file for historical token usage data.</p>
+<p><strong>Type:</strong> string
+<strong>Default:</strong> <code>logs/token_usage.csv</code>
+<strong>Required:</strong> Yes</p>
+<blockquote>
+<p><strong>Note:</strong> Relative paths are resolved relative to the config file's directory.</p>
+</blockquote>
+<h3 id="state_file">state_file</h3>
+<p>Path to the JSON state file used for live TUI counter display and multi-instance coordination.</p>
+<p><strong>Type:</strong> string
+<strong>Default:</strong> <code>logs/token_usage_state.json</code>
+<strong>Required:</strong> Yes</p>
+<blockquote>
+<p><strong>Note:</strong> Relative paths are resolved relative to the config file's directory.</p>
+</blockquote>
+<h3 id="flush_interval_seconds">flush_interval_seconds</h3>
+<p>How often to flush state to disk.</p>
+<p><strong>Type:</strong> number
+<strong>Default:</strong> <code>1.0</code>
+<strong>Range:</strong> 0.1–60.0 seconds</p>
+<h2 id="yaml-configuration">YAML Configuration</h2>
+<h3 id="minimal-configuration">Minimal Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">token_usage</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/token_usage.csv</span>
+<span class="w">          </span><span class="nt">state_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/token_usage_state.json</span>
+</code></pre>
+<h3 id="full-configuration">Full Configuration</h3>
+<pre><code class="language-yaml"><span class="nt">plugins</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">token_usage</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/token_usage.csv</span>
+<span class="w">          </span><span class="nt">state_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">logs/token_usage_state.json</span>
+<span class="w">          </span><span class="nt">flush_interval_seconds</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+<span class="w">          </span><span class="nt">critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre>
+<h2 id="csv-log-format">CSV Log Format</h2>
+<p>The CSV log appends one row per request/response pair:</p>
+<table>
+<thead>
+<tr>
+  <th>Column</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>timestamp</code></td>
+  <td>ISO 8601 timestamp (UTC)</td>
+</tr>
+<tr>
+  <td><code>server</code></td>
+  <td>MCP server name</td>
+</tr>
+<tr>
+  <td><code>method</code></td>
+  <td>MCP method (e.g., <code>tools/call</code>, <code>initialize</code>)</td>
+</tr>
+<tr>
+  <td><code>tool</code></td>
+  <td>Tool name for <code>tools/call</code>, otherwise <code>_other</code></td>
+</tr>
+<tr>
+  <td><code>input_tokens</code></td>
+  <td>Estimated input tokens (server response into LLM)</td>
+</tr>
+<tr>
+  <td><code>output_tokens</code></td>
+  <td>Estimated output tokens (tool call request from LLM)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Example CSV output:</strong></p>
+<pre><code class="language-csv"><span class="n">timestamp</span><span class="p">,</span><span class="n">server</span><span class="p">,</span><span class="n">method</span><span class="p">,</span><span class="k">tool</span><span class="p">,</span><span class="n">input_tokens</span><span class="p">,</span><span class="n">output_tokens</span>
+<span class="mi">2026</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">15</span><span class="n">T10</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mf">45.123456</span><span class="n">Z</span><span class="p">,</span><span class="n">filesystem</span><span class="p">,</span><span class="n">tools</span><span class="o">/</span><span class="n">call</span><span class="p">,</span><span class="n">read_file</span><span class="p">,</span><span class="mi">42</span><span class="p">,</span><span class="mi">1250</span>
+<span class="mi">2026</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">15</span><span class="n">T10</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mf">46.789012</span><span class="n">Z</span><span class="p">,</span><span class="n">filesystem</span><span class="p">,</span><span class="n">tools</span><span class="o">/</span><span class="n">call</span><span class="p">,</span><span class="n">write_file</span><span class="p">,</span><span class="mi">890</span><span class="p">,</span><span class="mi">15</span>
+<span class="mi">2026</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">15</span><span class="n">T10</span><span class="p">:</span><span class="mi">30</span><span class="p">:</span><span class="mf">47.345678</span><span class="n">Z</span><span class="p">,</span><span class="n">github</span><span class="p">,</span><span class="n">tools</span><span class="o">/</span><span class="n">call</span><span class="p">,</span><span class="n">search</span><span class="p">,</span><span class="mi">125</span><span class="p">,</span><span class="mi">3400</span>
+</code></pre>
+<p><strong>Analysis tip:</strong> Load the CSV into a spreadsheet and create pivot tables by server or tool to identify which tools consume the most tokens.</p>
+<img src="https://raw.githubusercontent.com/gatekit-ai/gatekit/main/docs/images/token_estimator_log.png" alt="Token usage CSV log opened in a spreadsheet" width="600">
+
+<h2 id="multi-instance-support">Multi-Instance Support</h2>
+<p>The plugin supports multiple gateway processes running concurrently:</p>
+<ul>
+<li>Each gateway instance registers in the state file under its process ID (PID)</li>
+<li>The TUI aggregates token counts across all running instances</li>
+<li>Dead instances (stale PIDs) are automatically cleaned up</li>
+<li>File locking prevents race conditions between instances</li>
+<li>Counters persist across gateway restarts</li>
+</ul>
+<h2 id="state-persistence">State Persistence</h2>
+<p>Token counters are saved to the state file and restored on restart. The state file uses a JSON format with per-PID instance tracking:</p>
+<ul>
+<li>On startup, the plugin restores its counters from the state file</li>
+<li>On shutdown, it removes its own PID entry while preserving other instances</li>
+<li>Reset operations propagate across all instances via reset IDs</li>
+</ul>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../../../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

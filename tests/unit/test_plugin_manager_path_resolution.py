@@ -35,6 +35,11 @@ class MockPathResolvableSecurityPlugin(SecurityPlugin, PathResolvablePlugin):
         """Validate paths - return validation errors."""
         return self.validation_errors
 
+    @classmethod
+    def resolve_and_validate_paths(cls, config, config_directory):
+        """Static path validation - no errors by default."""
+        return []
+
     async def process_request(self, request, server_name: Optional[str] = None):
         from gatekit.plugins.interfaces import PluginResult
 
@@ -70,6 +75,11 @@ class MockPathResolvableAuditingPlugin(AuditingPlugin, PathResolvablePlugin):
     def validate_paths(self):
         """Validate paths - return validation errors."""
         return self.validation_errors
+
+    @classmethod
+    def resolve_and_validate_paths(cls, config, config_directory):
+        """Static path validation - no errors by default."""
+        return []
 
     async def log_request(self, request, decision, server_name: Optional[str] = None):
         """Mock log request."""

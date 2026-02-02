@@ -2,10 +2,12 @@
 """Transport layer for MCP communication.
 
 This module provides transport abstractions and implementations for communicating
-with MCP servers. Currently supports stdio-based transport for process communication.
+with MCP servers. Supports stdio-based transport for process communication and
+HTTP-based transport for remote server communication.
 """
 
 from .base import Transport
 from .stdio import StdioTransport
+from .http import StreamableHttpTransport
 
-__all__ = ["Transport", "StdioTransport"]
+__all__ = ["Transport", "StdioTransport", "StreamableHttpTransport"]

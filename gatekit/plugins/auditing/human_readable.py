@@ -6,10 +6,10 @@ used by operations teams for monitoring and troubleshooting.
 
 from typing import Dict, Any, List
 from datetime import datetime
-from gatekit.plugins.auditing.base import BaseAuditingPlugin
+from gatekit.plugins.auditing.base import FileAuditingPlugin
 
 
-class LineAuditingPlugin(BaseAuditingPlugin):
+class LineAuditingPlugin(FileAuditingPlugin):
     """Line format auditing plugin for operational monitoring.
 
     Logs MCP requests and responses in single-line human-readable format
@@ -26,7 +26,7 @@ class LineAuditingPlugin(BaseAuditingPlugin):
     DISPLAY_NAME = "Human Readable"
     DESCRIPTION = "Log all MCP messages in human-readable format for quick visual inspection and monitoring."
 
-    # describe_status() and get_status_file_path() inherited from BaseAuditingPlugin
+    # describe_status() and get_status_file_path() inherited from FileAuditingPlugin
 
     @classmethod
     def get_display_actions(cls, config: Dict[str, Any]) -> List[str]:
@@ -45,7 +45,7 @@ class LineAuditingPlugin(BaseAuditingPlugin):
         return ["Setup"]
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
+    def get_config_schema(cls) -> Dict[str, Any]:
         """Return JSON Schema for Human Readable Auditing configuration."""
         return {
             "$schema": "https://json-schema.org/draft/2020-12/schema",

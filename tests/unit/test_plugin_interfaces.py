@@ -453,6 +453,12 @@ class TestPathResolvablePluginInterface:
             PathResolvablePlugin.validate_paths, "__isabstractmethod__", False
         )
 
+        # Check that resolve_and_validate_paths is abstract
+        assert hasattr(PathResolvablePlugin, "resolve_and_validate_paths")
+        assert getattr(
+            PathResolvablePlugin.resolve_and_validate_paths, "__isabstractmethod__", False
+        )
+
     def test_concrete_implementation_requirements(self):
         """Test concrete implementation must implement all abstract methods."""
 
@@ -489,6 +495,12 @@ class TestPathResolvablePluginInterface:
                     self.path_errors.append("Test path error")
                 return self.path_errors
 
+            @classmethod
+            def resolve_and_validate_paths(cls, config, config_directory):
+                if config.get("invalid_path"):
+                    return ["Test path error"]
+                return []
+
         # Should be able to instantiate complete implementation
         plugin = CompletePathPlugin({"test": "config"})
         assert plugin.config == {"test": "config"}
@@ -507,6 +519,10 @@ class TestPathResolvablePluginInterface:
         errors = plugin.validate_paths()
         assert errors == ["Test path error"]
 
+        # Test resolve_and_validate_paths classmethod
+        assert CompletePathPlugin.resolve_and_validate_paths({"test": "config"}, None) == []
+        assert CompletePathPlugin.resolve_and_validate_paths({"invalid_path": True}, None) == ["Test path error"]
+
     def test_path_plugin_with_security_mixin(self):
         """Test PathResolvablePlugin can be mixed with SecurityPlugin."""
 
@@ -524,6 +540,10 @@ class TestPathResolvablePluginInterface:
             def validate_paths(self):
                 self.paths_validated = True
                 return []  # No path errors for this test
+
+            @classmethod
+            def resolve_and_validate_paths(cls, config, config_directory):
+                return []
 
             async def process_request(self, request, server_name: Optional[str] = None):
                 return PluginResult(allowed=True, reason="Test plugin")
@@ -580,6 +600,10 @@ class TestPathResolvablePluginInterface:
                         f"Log directory does not exist: {self.log_path.parent}"
                     )
                 return errors
+
+            @classmethod
+            def resolve_and_validate_paths(cls, config, config_directory):
+                return []
 
             async def log_request(
                 self, request, pipeline, server_name: Optional[str] = None

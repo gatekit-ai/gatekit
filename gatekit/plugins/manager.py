@@ -610,18 +610,24 @@ class PluginManager:
             )
 
             tools_list = response.result["tools"]
-            # Check if tools are already namespaced (from broadcast aggregation)
-            if any(
+            # Check if tools are namespaced with THIS server's prefix (from broadcast aggregation)
+            # We specifically look for server_name__ prefix, not just any "__" in the name
+            # (some servers like AWS use "__" in their native tool names)
+            server_prefix = f"{server_name}__"
+            has_namespaced_tools = any(
                 isinstance(tool, dict)
                 and "name" in tool
                 and isinstance(tool["name"], str)
-                and "__" in tool["name"]
+                and tool["name"].startswith(server_prefix)
                 for tool in tools_list
-            ):
-                logger.debug(f"De-namespacing tools for server {server_name}")
+            )
+            if has_namespaced_tools:
+                logger.debug(f"De-namespacing tools for server {server_name!r}")
                 # Tools are namespaced, need to extract just this server's tools
                 tools_by_server = denamespace_tools_response(tools_list)
+                logger.debug(f"tools_by_server keys: {list(tools_by_server.keys())}")
                 clean_tools = tools_by_server.get(server_name, [])
+                logger.debug(f"De-namespaced {len(clean_tools)} tools for server {server_name!r}")
 
                 # Create clean response for plugin processing
                 current_response = MCPResponse(
@@ -940,15 +946,19 @@ class PluginManager:
                 and "tools" in server_pipeline.final_content.result
             ):
                 filtered_clean_tools = server_pipeline.final_content.result["tools"]
+                logger.debug(f"Server {server_name} has {len(filtered_clean_tools)} filtered tools after pipeline")
                 if server_name:
                     # Re-namespace the tools for the final response
                     namespaced_tools = namespace_tools_response(
                         server_name, filtered_clean_tools
                     )
+                    logger.debug(f"Re-namespaced {len(namespaced_tools)} tools for server {server_name}")
                     final_tools.extend(namespaced_tools)
                 else:
                     # No namespacing needed for tools without server context
                     final_tools.extend(filtered_clean_tools)
+            else:
+                logger.debug(f"Server {server_name} has no tools in final_content")
 
         # Determine aggregate pipeline outcome based on all servers
         if total_servers > 0 and len(blocked_servers) == total_servers:
@@ -1911,10 +1921,23 @@ class PluginManager:
                     if hasattr(plugin, "cleanup") and callable(
                         plugin.cleanup
                     ):
-                        plugin.cleanup()
+                        await plugin.cleanup()
                 except Exception as e:
                     logger.warning(
                         f"Error cleaning up auditing plugin {plugin.__class__.__name__} for upstream {upstream_name}: {e}"
+                    )
+
+        # Cleanup middleware plugins
+        for upstream_name, plugins in self.upstream_middleware_plugins.items():
+            for plugin in plugins:
+                try:
+                    if hasattr(plugin, "cleanup") and callable(
+                        plugin.cleanup
+                    ):
+                        await plugin.cleanup()
+                except Exception as e:
+                    logger.warning(
+                        f"Error cleaning up middleware plugin {plugin.__class__.__name__} for upstream {upstream_name}: {e}"
                     )
 
         logger.info("Plugin manager cleanup completed")

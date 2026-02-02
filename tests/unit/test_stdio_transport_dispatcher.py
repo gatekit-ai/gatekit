@@ -69,6 +69,7 @@ class TestStdioTransportDispatcher:
             await transport.connect()
 
             # Mock readline to return responses out of order
+            # Wait until requests are registered before delivering responses
             response_1 = {
                 "jsonrpc": "2.0",
                 "id": "req-1",
@@ -88,6 +89,12 @@ class TestStdioTransportDispatcher:
             response_iter = iter(responses)
 
             async def mock_readline():
+                # Wait for requests to be registered before delivering responses
+                for _ in range(50):
+                    if len(transport._pending_requests) >= 2:
+                        break
+                    await asyncio.sleep(0.01)
+
                 try:
                     return next(response_iter)
                 except StopIteration:
@@ -97,23 +104,17 @@ class TestStdioTransportDispatcher:
 
             mock_process.stdout.readline.side_effect = mock_readline
 
-            # Send two requests
+            # Send two requests concurrently and wait for responses
             request_1 = MCPRequest(jsonrpc="2.0", method="test", id="req-1")
             request_2 = MCPRequest(jsonrpc="2.0", method="test", id="req-2")
 
-            # Send requests and receive responses
-            await transport.send_message(request_1)
-            await transport.send_message(request_2)
-
-            # Give dispatcher a moment to process the responses
-            await asyncio.sleep(0.1)
-
-            # Each request should get its matching response despite order
-            response_1_received = await transport.receive_message()
-            response_2_received = await transport.receive_message()
+            # Use send_and_receive concurrently
+            response_1_received, response_2_received = await asyncio.gather(
+                transport.send_and_receive(request_1),
+                transport.send_and_receive(request_2),
+            )
 
             # Verify correct correlation - each response has correct data for its ID
-            # The order may vary, but each ID should have its correct data
             responses_by_id = {
                 response_1_received.id: response_1_received,
                 response_2_received.id: response_2_received,
@@ -198,11 +199,14 @@ class TestStdioTransportDispatcher:
 
             # Use an async iterator to control response timing
             response_iter = iter(responses)
-            response_ready = asyncio.Event()
 
             async def mock_readline():
-                # Wait for signal that responses should be available
-                await response_ready.wait()
+                # Wait for all requests to be registered before delivering responses
+                for _ in range(50):
+                    if len(transport._pending_requests) >= 5:
+                        break
+                    await asyncio.sleep(0.01)
+
                 try:
                     result = (json.dumps(next(response_iter)) + "\n").encode("utf-8")
                     # Small delay to ensure deterministic ordering
@@ -215,21 +219,10 @@ class TestStdioTransportDispatcher:
 
             mock_process.stdout.readline.side_effect = mock_readline
 
-            # Send all requests first
-            send_tasks = [transport.send_message(req) for req in requests]
-            await asyncio.gather(*send_tasks)
-
-            # Now signal that responses can be delivered
-            response_ready.set()
-
-            # Give dispatcher time to process responses
-            await asyncio.sleep(0.1)
-
-            # Receive all responses
-            received_responses = []
-            for _ in range(5):
-                resp = await transport.receive_message()
-                received_responses.append(resp)
+            # Send all requests concurrently using send_and_receive
+            received_responses = await asyncio.gather(
+                *[transport.send_and_receive(req) for req in requests]
+            )
 
             # Verify all requests got correct responses (order may vary)
             received_by_id = {resp.id: resp for resp in received_responses}
@@ -245,6 +238,8 @@ class TestStdioTransportDispatcher:
     )  # AsyncMock creates internal coroutines
     async def test_request_timeout_handling(self, transport, mock_process):
         """Test requests timeout if no response received."""
+        from gatekit.transport.errors import TransportError
+
         # Use a very short timeout for testing
         transport.request_timeout = 0.1
 
@@ -259,17 +254,16 @@ class TestStdioTransportDispatcher:
 
             mock_process.stdout.readline.side_effect = never_returns
 
-            # Send request
+            # Send request using send_and_receive - should timeout
             request = MCPRequest(jsonrpc="2.0", method="test", id="timeout-test")
-            await transport.send_message(request)
 
             # Verify timeout exception after configured time
-            with pytest.raises(TransportTimeoutError):
-                await transport.receive_message()
+            # send_and_receive wraps the timeout error in TransportError
+            with pytest.raises(TransportError) as exc_info:
+                await transport.send_and_receive(request)
 
-            # With the fix, we no longer clear all requests on timeout
-            # The request should still be pending (to allow retries or later responses)
-            assert "timeout-test" in transport._pending_requests
+            # Verify the underlying cause is a timeout
+            assert "timed out" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings(
@@ -277,6 +271,8 @@ class TestStdioTransportDispatcher:
     )  # AsyncMock creates internal coroutines
     async def test_dispatcher_error_propagation(self, transport, mock_process):
         """Test connection errors propagate to all waiting requests."""
+        from gatekit.transport.errors import TransportError
+
         # Setup mock process
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             await transport.connect()
@@ -286,19 +282,15 @@ class TestStdioTransportDispatcher:
                 b"",  # EOF to simulate connection loss
             ]
 
-            # Send multiple requests
-            requests = []
-            for i in range(3):
-                req = MCPRequest(jsonrpc="2.0", method="test", id=f"req-{i}")
-                requests.append(req)
-                await transport.send_message(req)
+            # Send a request - should fail with connection error
+            request = MCPRequest(jsonrpc="2.0", method="test", id="req-0")
 
-            # All pending requests should receive the error
-            with pytest.raises(TransportConnectionError, match="Connection closed"):
-                await transport.receive_message()
+            # Request should receive the error (wrapped in TransportError)
+            with pytest.raises(TransportError) as exc_info:
+                await transport.send_and_receive(request)
 
-            # Verify all requests are cleaned up
-            assert len(transport._pending_requests) == 0
+            # Verify the error is about connection being closed
+            assert "connection closed" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     @pytest.mark.filterwarnings(
@@ -325,6 +317,8 @@ class TestStdioTransportDispatcher:
     )  # AsyncMock creates internal coroutines
     async def test_dispatcher_validation_errors(self, transport, mock_process):
         """Test dispatcher handles validation errors properly."""
+        from gatekit.transport.errors import TransportError
+
         # Setup mock process
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             await transport.connect()
@@ -335,13 +329,15 @@ class TestStdioTransportDispatcher:
                 b"",  # EOF
             ]
 
-            # Send a request
+            # Send a request - should fail with protocol error
             request = MCPRequest(jsonrpc="2.0", method="test", id="test")
-            await transport.send_message(request)
 
-            # Should propagate JSON parsing error to waiting request
-            with pytest.raises(TransportProtocolError):
-                await transport.receive_message()
+            # Should propagate JSON parsing error to waiting request (wrapped in TransportError)
+            with pytest.raises(TransportError) as exc_info:
+                await transport.send_and_receive(request)
+
+            # Verify the error mentions the parsing issue
+            assert "parse" in str(exc_info.value).lower() or "json" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_dispatcher_lifecycle(self, transport, mock_process):

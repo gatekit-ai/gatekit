@@ -4,6 +4,7 @@ import pytest
 
 from gatekit.config.models import (
     UpstreamConfig,
+    UpstreamConfigSchema,
     TimeoutConfig,
     HttpConfig,
     ProxyConfig,
@@ -86,6 +87,95 @@ class TestUpstreamConfig:
             "draft-server", server_identity="  pending-identity  "
         )
         assert draft.server_identity == "pending-identity"
+
+
+class TestUpstreamConfigHttpTransport:
+    """Test UpstreamConfig HTTP transport configuration."""
+
+    def test_http_transport_valid_config(self):
+        """Valid HTTP transport configuration should be accepted."""
+        upstream = UpstreamConfig(
+            name="remote_api",
+            transport="http",
+            url="https://api.example.com/mcp",
+        )
+
+        assert upstream.transport == "http"
+        assert upstream.url == "https://api.example.com/mcp"
+        assert upstream.tls_verify is True
+
+    def test_http_transport_requires_url(self):
+        """HTTP transport without URL should raise error."""
+        with pytest.raises(ValueError, match="http transport requires 'url'"):
+            UpstreamConfig(
+                name="remote_api",
+                transport="http",
+            )
+
+    def test_http_transport_with_tls_disabled(self):
+        """HTTP transport with TLS verification disabled should be accepted."""
+        upstream = UpstreamConfig(
+            name="remote_api",
+            transport="http",
+            url="https://localhost:8443/mcp",
+            tls_verify=False,
+        )
+
+        assert upstream.tls_verify is False
+
+    def test_stdio_transport_still_requires_command(self):
+        """Stdio transport should still require command (regression)."""
+        with pytest.raises(ValueError, match="stdio transport requires 'command'"):
+            UpstreamConfig(
+                name="local_server",
+                transport="stdio",
+            )
+
+
+class TestUpstreamConfigSchemaHttpTransport:
+    """Test UpstreamConfigSchema HTTP transport validation."""
+
+    def test_schema_http_transport_valid(self):
+        """Valid HTTP transport in schema should be accepted."""
+        schema = UpstreamConfigSchema(
+            name="remote_api",
+            transport="http",
+            url="https://api.example.com/mcp",
+        )
+
+        assert schema.transport == "http"
+        assert str(schema.url) == "https://api.example.com/mcp"
+
+    def test_schema_http_transport_requires_url(self):
+        """HTTP transport in schema without URL should raise error."""
+        with pytest.raises(ValueError, match="http transport requires 'url'"):
+            UpstreamConfigSchema(
+                name="remote_api",
+                transport="http",
+            )
+
+    def test_schema_stdio_transport_requires_command(self):
+        """Stdio transport in schema should require command."""
+        with pytest.raises(ValueError, match="stdio transport requires 'command'"):
+            UpstreamConfigSchema(
+                name="local_server",
+                transport="stdio",
+            )
+
+    def test_schema_from_schema_preserves_tls_config(self):
+        """TLS config should be preserved when converting from schema."""
+        schema = UpstreamConfigSchema(
+            name="remote_api",
+            transport="http",
+            url="https://api.example.com/mcp",
+            tls_verify=False,
+        )
+
+        upstream = UpstreamConfig.from_schema(schema)
+
+        assert upstream.transport == "http"
+        assert upstream.url == "https://api.example.com/mcp"
+        assert upstream.tls_verify is False
 
 
 class TestTimeoutConfig:
@@ -232,6 +322,37 @@ class TestProxyConfig:
         assert hasattr(proxy, "upstreams")
         assert hasattr(proxy, "timeouts")
         assert hasattr(proxy, "http")
+
+    def test_hot_reload_defaults_to_disabled(self):
+        """Test that hot_reload defaults to 'disabled'."""
+        upstream = UpstreamConfig(name="test", command=["python", "-m", "my_server"])
+        timeouts = TimeoutConfig()
+
+        proxy = ProxyConfig(transport="stdio", upstreams=[upstream], timeouts=timeouts)
+
+        assert proxy.hot_reload == "disabled"
+
+    def test_hot_reload_can_be_set_to_enabled(self):
+        """Test that hot_reload can be set to 'enabled'."""
+        upstream = UpstreamConfig(name="test", command=["python", "-m", "my_server"])
+        timeouts = TimeoutConfig()
+
+        proxy = ProxyConfig(
+            transport="stdio", upstreams=[upstream], timeouts=timeouts, hot_reload="enabled"
+        )
+
+        assert proxy.hot_reload == "enabled"
+
+    def test_hot_reload_can_be_set_to_disabled(self):
+        """Test that hot_reload can be set to 'disabled'."""
+        upstream = UpstreamConfig(name="test", command=["python", "-m", "my_server"])
+        timeouts = TimeoutConfig()
+
+        proxy = ProxyConfig(
+            transport="stdio", upstreams=[upstream], timeouts=timeouts, hot_reload="disabled"
+        )
+
+        assert proxy.hot_reload == "disabled"
 
 
 class TestConfigModelIntegration:

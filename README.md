@@ -1,7 +1,7 @@
 # Gatekit
 
 [![Open Source](https://img.shields.io/badge/Open%20Source-Apache%202.0-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/gatekit-ai/gatekit/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/gatekit-ai/gatekit/releases)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://python.org)
 [![Docs](https://img.shields.io/badge/docs-gatekit.ai-blue.svg)](https://gatekit.ai)
 
@@ -9,7 +9,7 @@
 
 Gatekit is a Model Context Protocol gateway that controls traffic between your LLM and MCP tools for better visibility, security, and control.
 
-It ships with plugins for tool management, content security, and audit logging.
+It ships with plugins for tool management, content security, audit logging, and token usage tracking. Supports both local stdio servers and remote HTTP/SSE servers.
 
 Need custom behavior? **Extend with plugins, not forks.** Your customizations stay separate, so you can keep getting Gatekit updates without merge conflicts.
 
@@ -18,6 +18,7 @@ Built-in plugins handle:
 - **Tool management** — expose only the tools you want, rename and modify descriptions for cleaner context and better discoverability
 - **Content security** — catch PII and secrets before they leave your machine, defend against basic prompt injection attacks (regex-based)
 - **Audit logging** — debug failures, track usage, inspect full request and response bodies
+- **Token usage tracking** — estimate token consumption per server and tool, with CSV export
 
 <img src="https://raw.githubusercontent.com/gatekit-ai/gatekit/main/docs/images/gatekit-config-editor.png" width="800" alt="Gatekit configuration editor">
 
@@ -138,6 +139,7 @@ Gatekit proxies traffic between Model Context Protocol (MCP) clients and servers
 - **JSON Lines** - Structured logs for processing
 - **CSV** - Spreadsheet-compatible logs
 - **Human Readable** - Plain text logs for quick review
+- **Token Usage Estimator** - Track token consumption per server and tool, with live TUI display and CSV export
 
 ## Custom Plugins
 
@@ -176,14 +178,11 @@ See the [plugin development guide](docs/plugin-development-guide.md) for details
 
 ## Roadmap and Limitations
 
-Gatekit currently only supports local stdio servers and regex pattern matching based security and privacy filters.
+Security plugins use regex-based pattern matching, not production-grade ML/NLP.
 
 Planned features include:
 
-- **HTTP transport** - Connect to remote MCP servers
-- **Hot-reload** - Change config without restarting the gateway
 - **Enhanced detection** - Support for best-in-class third-party security and privacy solutions like Microsoft Presidio, Yelp Secrets, etc.
-- **Token usage estimation** - Track token consumption by server and tool
 - **Response pruning** - Built-in response trimming functionality to help reduce context bloat
 
 ## Feedback
@@ -196,4 +195,4 @@ Apache License 2.0 - see [LICENSE](LICENSE)
 
 ---
 
-**Gatekit v0.1.0** - A hackable MCP gateway
+**Gatekit v0.2.0** - A hackable MCP gateway

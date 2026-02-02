@@ -29,7 +29,7 @@ class TestRealAuditingPluginSchemas:
         """JsonAuditingPlugin schema must have minLength: 1 on output_file."""
         from gatekit.plugins.auditing.json_lines import JsonAuditingPlugin
 
-        schema = JsonAuditingPlugin.get_json_schema()
+        schema = JsonAuditingPlugin.get_config_schema()
         output_file_schema = schema["properties"]["output_file"]
 
         assert output_file_schema.get("minLength") == 1, (
@@ -40,7 +40,7 @@ class TestRealAuditingPluginSchemas:
         """CsvAuditingPlugin schema must have minLength: 1 on output_file."""
         from gatekit.plugins.auditing.csv import CsvAuditingPlugin
 
-        schema = CsvAuditingPlugin.get_json_schema()
+        schema = CsvAuditingPlugin.get_config_schema()
         output_file_schema = schema["properties"]["output_file"]
 
         assert output_file_schema.get("minLength") == 1, (
@@ -51,7 +51,7 @@ class TestRealAuditingPluginSchemas:
         """LineAuditingPlugin schema must have minLength: 1 on output_file."""
         from gatekit.plugins.auditing.human_readable import LineAuditingPlugin
 
-        schema = LineAuditingPlugin.get_json_schema()
+        schema = LineAuditingPlugin.get_config_schema()
         output_file_schema = schema["properties"]["output_file"]
 
         assert output_file_schema.get("minLength") == 1, (
@@ -65,7 +65,7 @@ class TestRealAuditingPluginSchemas:
         from gatekit.plugins.auditing.human_readable import LineAuditingPlugin
 
         for plugin_class in [JsonAuditingPlugin, CsvAuditingPlugin, LineAuditingPlugin]:
-            schema = plugin_class.get_json_schema()
+            schema = plugin_class.get_config_schema()
             required = schema.get("required", [])
 
             assert "output_file" in required, (
@@ -85,7 +85,7 @@ class MockPluginWithNumericField(SecurityPlugin):
     DISPLAY_SCOPE = "global"
 
     @classmethod
-    def get_json_schema(cls):
+    def get_config_schema(cls):
         return {
             "type": "object",
             "properties": {
@@ -107,7 +107,7 @@ class MockPluginWithStringField(SecurityPlugin):
     DISPLAY_SCOPE = "global"
 
     @classmethod
-    def get_json_schema(cls):
+    def get_config_schema(cls):
         return {
             "type": "object",
             "properties": {

@@ -10,6 +10,10 @@ from typing import Dict, List, Optional, Tuple
 def parse_namespaced_name(name: str) -> Tuple[Optional[str], str]:
     """Parse a potentially namespaced name into server and clean name parts.
 
+    Uses exactly two underscores as the delimiter. Names with three or more
+    consecutive underscores are NOT treated as namespaced (some servers like
+    AWS use triple underscores in their native tool names).
+
     Args:
         name: The name to parse (e.g., "filesystem__read_file" or "read_file")
 
@@ -18,10 +22,23 @@ def parse_namespaced_name(name: str) -> Tuple[Optional[str], str]:
         - "filesystem__read_file" → ("filesystem", "read_file")
         - "read_file" → (None, "read_file")
         - "server__nested__name" → ("server", "nested__name")
+        - "aws___tool" → (None, "aws___tool")  # Triple underscore - not namespaced
     """
-    if "__" in name:
-        parts = name.split("__", 1)
-        return parts[0], parts[1]
+    if "__" not in name:
+        return None, name
+
+    # Find the first occurrence of exactly two underscores (not three or more)
+    # by looking for "__" that's not preceded or followed by another underscore
+    i = 0
+    while i < len(name) - 1:
+        if name[i:i+2] == "__":
+            # Check it's not part of "___" (three or more underscores)
+            before_ok = i == 0 or name[i-1] != "_"
+            after_ok = i + 2 >= len(name) or name[i+2] != "_"
+            if before_ok and after_ok:
+                return name[:i], name[i+2:]
+        i += 1
+
     return None, name
 
 
@@ -139,12 +156,17 @@ def denamespace_tools_response(tools: List[Dict]) -> Dict[str, List[Dict]]:
 
 
 def is_namespaced(name: str) -> bool:
-    """Check if a name contains server namespace prefix.
+    """Check if a name contains server namespace prefix (exactly two underscores).
 
     Args:
         name: The name to check
 
     Returns:
-        True if the name contains "__", False otherwise
+        True if the name contains exactly "__" (not "___"), False otherwise
     """
-    return isinstance(name, str) and "__" in name
+    if not isinstance(name, str) or "__" not in name:
+        return False
+
+    # Check for exactly two underscores (not three or more)
+    server, _ = parse_namespaced_name(name)
+    return server is not None

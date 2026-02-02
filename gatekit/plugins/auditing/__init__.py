@@ -8,8 +8,9 @@ for HANDLERS variables. All plugins (built-in and user-created) are treated
 equally through the discovery system.
 """
 
-from .base import BaseAuditingPlugin
+from .base import FileAuditingPlugin, BaseAuditingPlugin
 
 __all__ = [
-    "BaseAuditingPlugin",
+    "FileAuditingPlugin",
+    "BaseAuditingPlugin",  # backward-compatibility alias
 ]

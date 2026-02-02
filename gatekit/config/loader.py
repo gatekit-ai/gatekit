@@ -539,8 +539,14 @@ class ConfigLoader:
     ) -> List[str]:
         """Validate paths for a single plugin.
 
+        Uses the classmethod ``resolve_and_validate_paths`` on
+        ``PathResolvablePlugin`` subclasses to perform pure-computation
+        path validation without creating a plugin instance (which would
+        trigger side effects like timers, file handlers, and state
+        restoration).
+
         Args:
-            plugin_type: Type of plugin ("security" or "auditing")
+            plugin_type: Type of plugin ("security", "auditing", or "middleware")
             plugin_config: Plugin configuration
             config_directory: Directory containing the configuration file (for path resolution)
 
@@ -564,23 +570,17 @@ class ConfigLoader:
             # Check if plugin is critical (default to True for security)
             is_critical = plugin_config.config.get("critical", True)
 
-            # Create temporary plugin instance for path validation
-            temp_plugin = plugin_class(plugin_config.config)
+            # Use classmethod for path validation — no instance creation, no side effects
+            validation_errors = plugin_class.resolve_and_validate_paths(
+                plugin_config.config, config_directory
+            )
 
-            # Set config directory for path resolution
-            if config_directory:
-                temp_plugin.set_config_directory(config_directory)
-
-            # Validate paths
-            validation_errors = temp_plugin.validate_paths()
             if validation_errors:
                 if is_critical:
                     # For critical plugins, path validation errors are fatal
                     errors.extend(validation_errors)
                 else:
                     # For non-critical plugins, log path validation errors but don't fail startup
-                    import logging
-
                     logger = logging.getLogger(__name__)
                     logger.warning(
                         f"Non-critical {plugin_type} plugin '{plugin_config.handler}' has path validation errors: {'; '.join(validation_errors)}"
@@ -596,8 +596,6 @@ class ConfigLoader:
                 errors.append(f"Error validating plugin paths: {e}")
             else:
                 # For non-critical plugins, log error but don't fail startup
-                import logging
-
                 logger = logging.getLogger(__name__)
                 logger.warning(
                     f"Non-critical {plugin_type} plugin '{plugin_config.handler}' path validation failed: {e}"

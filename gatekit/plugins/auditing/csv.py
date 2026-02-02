@@ -9,10 +9,10 @@ import io
 import json
 import threading
 from typing import Dict, Any, List
-from gatekit.plugins.auditing.base import BaseAuditingPlugin
+from gatekit.plugins.auditing.base import FileAuditingPlugin
 
 
-class CsvAuditingPlugin(BaseAuditingPlugin):
+class CsvAuditingPlugin(FileAuditingPlugin):
     """CSV auditing plugin for structured logging.
 
     Logs MCP requests and responses in CSV format for analysis and reporting.
@@ -29,7 +29,7 @@ class CsvAuditingPlugin(BaseAuditingPlugin):
     DISPLAY_NAME = "CSV"
     DESCRIPTION = "Log all MCP messages in CSV format. Excel-compatible with configurable delimiters."
 
-    # describe_status() and get_status_file_path() inherited from BaseAuditingPlugin
+    # describe_status() and get_status_file_path() inherited from FileAuditingPlugin
 
     @classmethod
     def get_display_actions(cls, config: Dict[str, Any]) -> List[str]:
@@ -68,7 +68,7 @@ class CsvAuditingPlugin(BaseAuditingPlugin):
                      - quote_char: Quote character (default: '"')
                      - quote_style: "minimal", "all", "nonnumeric", "none" (default: "minimal")
                      - null_value: Value for null fields (default: "")
-                   Plus all BaseAuditingPlugin options (output_file, etc.)
+                   Plus all FileAuditingPlugin options (output_file, etc.)
 
         Raises:
             ValueError: If configuration is invalid
@@ -101,7 +101,7 @@ class CsvAuditingPlugin(BaseAuditingPlugin):
         self.field_order = self._get_field_order()
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
+    def get_config_schema(cls) -> Dict[str, Any]:
         """Return JSON Schema for CSV Auditing configuration."""
         return {
             "$schema": "https://json-schema.org/draft/2020-12/schema",

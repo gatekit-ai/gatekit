@@ -33,9 +33,9 @@ def _get_default_plugin_config(plugin_type: str, plugin_class: type = None) -> D
     config = {key: DEFAULT_FRAMEWORK_VALUES.get(key, True) for key in framework_fields}
 
     # Add schema defaults if plugin class is available
-    if plugin_class is not None and hasattr(plugin_class, "get_json_schema"):
+    if plugin_class is not None and hasattr(plugin_class, "get_config_schema"):
         try:
-            schema = plugin_class.get_json_schema()
+            schema = plugin_class.get_config_schema()
             for key, prop in schema.get("properties", {}).items():
                 if "default" in prop and key not in config:
                     config[key] = prop["default"]
@@ -1350,14 +1350,14 @@ class PluginActionsMixin:
                 return
 
         # Check if plugin has JSON schema
-        if not hasattr(handler_class, "get_json_schema"):
+        if not hasattr(handler_class, "get_config_schema"):
             self.app.notify(
                 f"Plugin {handler_name} does not support configuration",
                 severity="warning"
             )
             return
 
-        schema = handler_class.get_json_schema()
+        schema = handler_class.get_config_schema()
         if not schema:
             self.app.notify(
                 "This plugin does not define a configuration schema.\nConfiguration must be done manually in the config file.",

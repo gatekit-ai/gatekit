@@ -70,7 +70,7 @@
     </aside>
     <main class="docs-content">
       <h1 id="gatekit-configuration-specification">Gatekit Configuration Specification</h1>
-<p><strong>Version</strong>: 0.1.0<br />
+<p><strong>Version</strong>: 0.2.0
 <strong>Status</strong>: Authoritative Reference</p>
 <blockquote>
 <p><strong>Note</strong>: This document describes the ACTUAL configuration format as implemented. The Pydantic schemas in <a href="../gatekit/config/models.py"><code>gatekit/config/models.py</code></a> define the validation rules and accepted fields.</p>
@@ -228,6 +228,20 @@
   <td><code>null</code></td>
   <td>MCP-reported server name</td>
 </tr>
+<tr>
+  <td><code>enabled</code></td>
+  <td>boolean</td>
+  <td>No</td>
+  <td><code>true</code></td>
+  <td>Enable/disable this server</td>
+</tr>
+<tr>
+  <td><code>tls_verify</code></td>
+  <td>boolean</td>
+  <td>No</td>
+  <td><code>true</code></td>
+  <td>TLS verification (http only)</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Command Format:</strong></p>
@@ -239,6 +253,67 @@
 <span class="w">    </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http&quot;</span>
 <span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://example.com/mcp&quot;</span>
 </code></pre>
+<h4 id="http-transport-configuration">HTTP Transport Configuration</h4>
+<p>HTTP transport connects to remote MCP servers using the Streamable HTTP protocol. This is useful for:</p>
+<ul>
+<li>Cloud-hosted MCP servers</li>
+<li>Multi-tenant MCP deployments</li>
+<li>Servers behind load balancers</li>
+</ul>
+<p><strong>HTTP-Specific Upstream Fields:</strong></p>
+<table>
+<thead>
+<tr>
+  <th>Field</th>
+  <th>Type</th>
+  <th>Default</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><code>url</code></td>
+  <td>string</td>
+  <td>-</td>
+  <td>Required. The MCP server endpoint URL</td>
+</tr>
+<tr>
+  <td><code>tls_verify</code></td>
+  <td>boolean</td>
+  <td><code>true</code></td>
+  <td>Enable TLS certificate verification</td>
+</tr>
+</tbody>
+</table>
+<p><strong>TLS Verification (<code>tls_verify</code>):</strong></p>
+<ul>
+<li><strong><code>true</code></strong> (default): Verify server certificates using system CA bundle</li>
+<li><strong><code>false</code></strong>: Disable TLS verification (insecure - for testing only)</li>
+</ul>
+<p><strong>HTTP Transport Examples:</strong></p>
+<pre><code class="language-yaml"><span class="c1"># HTTP upstream with default TLS (system CA)</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;remote_api&quot;</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http&quot;</span>
+<span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://api.example.com/mcp&quot;</span>
+
+<span class="c1"># HTTP upstream with TLS disabled (testing only - insecure!)</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;local_dev&quot;</span>
+<span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http&quot;</span>
+<span class="w">  </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http://localhost:8123/mcp&quot;</span>
+<span class="w">  </span><span class="nt">tls_verify</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre>
+<p><strong>Security Notes:</strong></p>
+<ul>
+<li><strong>Always use HTTPS in production.</strong> HTTP URLs should only be used for local development.</li>
+<li><strong>Setting <code>tls_verify: false</code> is insecure</strong> and should only be used for testing with self-signed certificates.</li>
+</ul>
+<p><strong>Session Handling:</strong></p>
+<p>HTTP transport uses MCP's session management protocol:</p>
+<ul>
+<li><strong>Session ID</strong>: Automatically extracted from server response headers and included in subsequent requests</li>
+<li><strong>Session expiry</strong>: If a session expires (server returns 404), Gatekit handles it transparently</li>
+<li><strong>Session termination</strong>: On disconnect, Gatekit sends a DELETE request to terminate the session cleanly</li>
+</ul>
 <h4 id="important-environment-variables">Important: Environment Variables</h4>
 <p><strong>Gatekit upstream configurations do NOT support <code>env</code> fields.</strong></p>
 <p>❌ <strong>Not Supported:</strong></p>
@@ -406,17 +481,23 @@
 <li>http transport requires <code>proxy.http</code> section</li>
 </ul>
 <h2 id="complete-working-example">Complete Working Example</h2>
-<p>The following example shows a complete working configuration with inline comments.</p>
+<p>The following example shows a complete working configuration with inline comments, including both stdio and HTTP upstreams.</p>
 <pre><code class="language-yaml"><span class="c1"># Complete example configuration</span>
 <span class="nt">proxy</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">stdio</span>
 
 <span class="w">  </span><span class="nt">upstreams</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># stdio upstream - local MCP server spawned as subprocess</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;filesystem&quot;</span>
 <span class="w">      </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;npx&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;@modelcontextprotocol/server-filesystem&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;/Users/user/Documents&quot;</span><span class="p p-Indicator">]</span>
 <span class="w">      </span><span class="nt">restart_on_failure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 <span class="w">      </span><span class="nt">max_restart_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
 <span class="w">      </span><span class="nt">server_identity</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;secure-filesystem-server&quot;</span>
+
+<span class="w">    </span><span class="c1"># HTTP upstream - remote MCP server with default TLS</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;remote_api&quot;</span>
+<span class="w">      </span><span class="nt">transport</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;http&quot;</span>
+<span class="w">      </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;https://api.example.com/mcp&quot;</span>
 
 <span class="w">  </span><span class="nt">timeouts</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">connection_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
@@ -452,6 +533,13 @@
 <span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;read_file&quot;</span>
 <span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;write_file&quot;</span>
 <span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;list_directory&quot;</span>
+<span class="w">    </span><span class="nt">remote_api</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;tool_manager&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">tools</span><span class="p">:</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;search&quot;</span>
+<span class="w">            </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">tool</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;query&quot;</span>
 
 <span class="w">  </span><span class="nt">auditing</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">_global</span><span class="p">:</span>
@@ -465,6 +553,11 @@
 <span class="w">          </span><span class="nt">max_body_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10000</span>
 <span class="w">          </span><span class="c1"># critical: true is the default - uncomment below for development</span>
 <span class="w">          </span><span class="c1"># critical: false</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">handler</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;token_usage&quot;</span>
+<span class="w">        </span><span class="nt">config</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">          </span><span class="nt">output_file</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;logs/token_usage.csv&quot;</span>
 
 <span class="nt">logging</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;INFO&quot;</span>
@@ -526,7 +619,7 @@ Set environment variables in your shell or MCP client config, not in Gatekit con
 </ul>
 <h2 id="version-history">Version History</h2>
 <ul>
-<li><strong>0.1.0</strong>: Current specification</li>
+<li><strong>0.2.0</strong>: Current specification — added <code>enabled</code> field for upstreams, HTTP transport, token usage plugin</li>
 <li><strong>0.1.0</strong>: Initial release with handler-based plugin system</li>
 </ul>
 <hr />

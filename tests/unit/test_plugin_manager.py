@@ -254,3 +254,64 @@ class TestPluginManagerAuditing:
             await manager.log_notification(notif, pipeline)
             mock_logger.error.assert_called()
         assert len(good.logged_notifications) == 1
+
+
+class TestPluginManagerCleanup:
+    @pytest.mark.asyncio
+    async def test_cleanup_calls_all_plugin_types(self):
+        """Test that cleanup calls cleanup() on security, auditing, and middleware plugins."""
+        from unittest.mock import AsyncMock, Mock
+        from gatekit.plugins.interfaces import SecurityPlugin, AuditingPlugin, MiddlewarePlugin
+
+        manager = PluginManager({})
+        manager._initialized = True
+
+        # Create mock plugins with cleanup methods
+        mock_security = Mock(spec=SecurityPlugin)
+        mock_security.cleanup = AsyncMock()
+
+        mock_auditing = Mock(spec=AuditingPlugin)
+        mock_auditing.cleanup = AsyncMock()
+
+        mock_middleware = Mock(spec=MiddlewarePlugin)
+        mock_middleware.cleanup = AsyncMock()
+
+        # Set up upstream-scoped plugins (the structure used by PluginManager)
+        manager.upstream_security_plugins = {"_global": [mock_security]}
+        manager.upstream_auditing_plugins = {"_global": [mock_auditing]}
+        manager.upstream_middleware_plugins = {"_global": [mock_middleware]}
+
+        await manager.cleanup()
+
+        # All plugins should have cleanup called
+        mock_security.cleanup.assert_called_once()
+        mock_auditing.cleanup.assert_called_once()
+        mock_middleware.cleanup.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cleanup_handles_plugin_errors(self):
+        """Test that cleanup continues even if individual plugins fail."""
+        from unittest.mock import AsyncMock, Mock
+        from gatekit.plugins.interfaces import SecurityPlugin, AuditingPlugin
+
+        manager = PluginManager({})
+        manager._initialized = True
+
+        # Create a plugin that fails cleanup
+        failing_plugin = Mock(spec=SecurityPlugin)
+        failing_plugin.cleanup = AsyncMock(side_effect=Exception("Cleanup failed"))
+
+        # Create a plugin that succeeds
+        working_plugin = Mock(spec=AuditingPlugin)
+        working_plugin.cleanup = AsyncMock()
+
+        manager.upstream_security_plugins = {"_global": [failing_plugin]}
+        manager.upstream_auditing_plugins = {"_global": [working_plugin]}
+        manager.upstream_middleware_plugins = {}
+
+        # Should not raise - errors are logged but don't stop cleanup
+        await manager.cleanup()
+
+        # Both should have been called
+        failing_plugin.cleanup.assert_called_once()
+        working_plugin.cleanup.assert_called_once()

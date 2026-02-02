@@ -40,11 +40,11 @@ class SchemaValidator:
             for handler_name, plugin_class in handlers.items():
                 # Only register schemas that override the base implementation
                 if (
-                    hasattr(plugin_class, "get_json_schema")
-                    and plugin_class.get_json_schema is not PluginInterface.get_json_schema
+                    hasattr(plugin_class, "get_config_schema")
+                    and plugin_class.get_config_schema is not PluginInterface.get_config_schema
                 ):
                     try:
-                        schema = plugin_class.get_json_schema()
+                        schema = plugin_class.get_config_schema()
 
                         # Inject framework fields based on plugin category
                         # - Auditing: only enabled (no priority)
@@ -101,7 +101,7 @@ class SchemaValidator:
     def has_schema(self, handler_name: str) -> bool:
         """Check if a schema exists for the given handler.
 
-        Returns False for plugins that haven't implemented get_json_schema().
+        Returns False for plugins that haven't implemented get_config_schema().
         This allows custom plugins to work without schemas.
         """
         return handler_name in self.validators

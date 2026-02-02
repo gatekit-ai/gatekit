@@ -958,9 +958,9 @@ class TestCallTraceConfigurableFields:
         assert "..." in params_text
         assert len(params_text) <= 23  # 20 + "..."
 
-    def test_get_json_schema_structure(self):
-        """Verify get_json_schema() returns correct structure."""
-        schema = CallTracePlugin.get_json_schema()
+    def test_get_config_schema_structure(self):
+        """Verify get_config_schema() returns correct structure."""
+        schema = CallTracePlugin.get_config_schema()
 
         # Verify schema structure
         assert schema["type"] == "object"

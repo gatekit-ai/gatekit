@@ -141,7 +141,7 @@
 <pre><code class="language-python"><span class="c1"># CORRECT: Same validation for all plugins</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">validate_plugin_config</span><span class="p">(</span><span class="n">handler</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">plugin_class</span> <span class="o">=</span> <span class="n">discover_plugin_class</span><span class="p">(</span><span class="n">handler</span><span class="p">)</span>  <span class="c1"># Works for any plugin</span>
-    <span class="n">schema</span> <span class="o">=</span> <span class="n">plugin_class</span><span class="o">.</span><span class="n">get_json_schema</span><span class="p">()</span>
+    <span class="n">schema</span> <span class="o">=</span> <span class="n">plugin_class</span><span class="o">.</span><span class="n">get_config_schema</span><span class="p">()</span>
     <span class="n">validate</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span>
 </code></pre>
 <h2 id="consequences">Consequences</h2>

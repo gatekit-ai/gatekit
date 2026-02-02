@@ -82,19 +82,6 @@ class MockTransport(Transport):
                     future.set_exception(RuntimeError("Transport disconnected"))
             self._pending_requests.clear()
 
-    async def send_message(self, message: MCPRequest) -> None:
-        """Send a request message."""
-        if not self._connected:
-            raise RuntimeError("Not connected")
-
-        # Register pending request
-        async with self._request_lock:
-            future = asyncio.Future()
-            self._pending_requests[message.id] = future
-
-        # Queue request for processing
-        await self._request_queue.put(message)
-
     async def send_notification(self, notification: MCPNotification) -> None:
         """Send a notification from client to server."""
         if not self._connected:
@@ -102,39 +89,6 @@ class MockTransport(Transport):
 
         # Queue in client->server direction
         await self._client_to_server_notifications.put(notification)
-
-    async def receive_message(self) -> MCPResponse:
-        """Receive a response message."""
-        if not self._connected:
-            raise RuntimeError("Not connected")
-
-        # Wait for any pending response
-        async with self._request_lock:
-            if not self._pending_requests:
-                raise RuntimeError("No pending requests")
-            pending_futures = list(self._pending_requests.values())
-
-        # Wait for first completed response with a timeout
-        try:
-            done, pending = await asyncio.wait(
-                pending_futures,
-                timeout=60.0,  # Long timeout to avoid premature timeouts
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-        except asyncio.TimeoutError:
-            raise RuntimeError("Timeout waiting for response")
-
-        if not done:
-            raise RuntimeError("No responses available")
-
-        # Get completed response
-        completed_future = done.pop()
-        response = completed_future.result()
-
-        # Don't clean up here - let the caller do it
-        # This matches the stdio transport behavior
-
-        return response
 
     async def send_and_receive(self, request: MCPRequest) -> MCPResponse:
         """Send request and wait for its specific response."""

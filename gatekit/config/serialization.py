@@ -53,7 +53,11 @@ def config_to_dict(
                         f"Upstream '{upstream.name}' is missing a URL for http transport."
                     )
 
-            upstream_dict = {"name": upstream.name, "transport": upstream.transport}
+            upstream_dict = {
+                "name": upstream.name,
+                "enabled": upstream.enabled,
+                "transport": upstream.transport,
+            }
             if upstream.command:
                 # Write command as full list (ConfigLoader expects this format)
                 upstream_dict["command"] = upstream.command
@@ -67,6 +71,12 @@ def config_to_dict(
                 )
             if upstream.server_identity:
                 upstream_dict["server_identity"] = upstream.server_identity
+
+            # TLS configuration for HTTP transport (only include non-default values)
+            if upstream.transport == "http":
+                if upstream.tls_verify is not True:  # Only if non-default
+                    upstream_dict["tls_verify"] = upstream.tls_verify
+
             result["proxy"]["upstreams"].append(upstream_dict)
 
     # Add timeouts if non-default

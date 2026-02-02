@@ -412,9 +412,9 @@ class MyFileAuditingPlugin(AuditingPlugin, PathResolvablePlugin):
         return errors
 ```
 
-### Using BaseAuditingPlugin
+### Using FileAuditingPlugin
 
-For file-based auditing, extend `BaseAuditingPlugin` instead of `AuditingPlugin` directly. It provides:
+For file-based auditing, extend `FileAuditingPlugin` instead of `AuditingPlugin` directly. It provides:
 - Rotating file handlers
 - Path resolution
 - Request duration tracking
@@ -422,9 +422,9 @@ For file-based auditing, extend `BaseAuditingPlugin` instead of `AuditingPlugin`
 - Buffering for early events
 
 ```python
-from gatekit.plugins.auditing.base import BaseAuditingPlugin
+from gatekit.plugins.auditing.base import FileAuditingPlugin
 
-class MyJsonAuditingPlugin(BaseAuditingPlugin):
+class MyJsonAuditingPlugin(FileAuditingPlugin):
     DISPLAY_NAME = "My JSON Logger"
 
     def __init__(self, config: Dict[str, Any]):
@@ -444,6 +444,8 @@ class MyJsonAuditingPlugin(BaseAuditingPlugin):
         return json.dumps(data) + "\n"
 ```
 
+> **Migration note (v0.2.0):** `BaseAuditingPlugin` was renamed to `FileAuditingPlugin`. Update your imports from `from gatekit.plugins.auditing.base import BaseAuditingPlugin` to `from gatekit.plugins.auditing.base import FileAuditingPlugin`.
+
 ## Configuration
 
 ### JSON Schema for TUI
@@ -452,7 +454,7 @@ Plugins can provide JSON Schema for automatic TUI form generation:
 
 ```python
 @classmethod
-def get_json_schema(cls) -> Dict[str, Any]:
+def get_config_schema(cls) -> Dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -473,6 +475,54 @@ def get_json_schema(cls) -> Dict[str, Any]:
         "additionalProperties": False,
     }
 ```
+
+> **Migration note (v0.2.0):** `get_json_schema()` was renamed to `get_config_schema()`. A deprecated shim is provided for backward compatibility and will be removed in v0.3.0.
+
+### Output Schema for TUI Display
+
+Plugins can declare display capabilities for the TUI by implementing `get_output_schema()`. This allows plugins to add columns to the server list and define context menu actions.
+
+```python
+@classmethod
+def get_output_schema(cls) -> Dict[str, Any]:
+    return {
+        "server_columns": [
+            {
+                "key": "output",
+                "label": "↑",
+                "value_format": "humanized_number",
+                "width": 7,
+            },
+            {
+                "key": "input",
+                "label": "↓",
+                "value_format": "humanized_number",
+                "width": 7,
+            },
+        ],
+        "context_menu_actions": [
+            {
+                "label": "Reset '{server_name}'",
+                "action": "reset_server",
+                "confirm": True,
+            },
+            {
+                "label": "Reset all servers",
+                "action": "reset_all",
+                "confirm": True,
+            },
+        ],
+        "state_file": "state_file",  # Config key pointing to the state file path
+    }
+```
+
+**Schema fields:**
+
+| Field | Purpose |
+|-------|---------|
+| `server_columns` | Add columns to the TUI server list. Each column specifies a `key`, display `label`, `value_format`, and `width`. |
+| `context_menu_actions` | Add actions to the TUI context menu. Use `{server_name}` in labels for dynamic substitution. |
+| `state_file` | Config key name that holds the path to the plugin's state file (for TUI to read live data). |
 
 ### Schema Defaults Requirement
 

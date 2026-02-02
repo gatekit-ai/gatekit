@@ -29,7 +29,7 @@ class TestPluginConfigModal:
         # Create a mock plugin class with invalid schema type
         class MockPlugin:
             @classmethod
-            def get_json_schema(cls):
+            def get_config_schema(cls):
                 return {
                     "type": "object",
                     "properties": {"invalid_field": {"type": "invalid_type"}},
@@ -49,7 +49,7 @@ class TestPluginConfigModal:
 
         class MockPluginNoSchema:
             @classmethod
-            def get_json_schema(cls):
+            def get_config_schema(cls):
                 return {"type": "object", "properties": {}}
 
         current_config = {}

@@ -146,7 +146,7 @@ def build_form_state(
     if plugin_type is None:
         plugin_type = _get_plugin_type(plugin_class)
 
-    base_schema = plugin_class.get_json_schema()
+    base_schema = plugin_class.get_config_schema()
     schema = inject_framework_fields(base_schema, plugin_type)
     schema_keys = frozenset(schema.get("properties", {}).keys())
     config_dict: Dict[str, Any] = deepcopy(config) if isinstance(config, Mapping) else {}

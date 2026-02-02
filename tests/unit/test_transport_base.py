@@ -32,9 +32,7 @@ class TestTransportInterface:
         expected_methods = {
             "connect",
             "disconnect",
-            "send_message",
             "send_notification",
-            "receive_message",
             "get_next_notification",
             "is_connected",
             "send_and_receive",
@@ -65,14 +63,8 @@ class TestTransportInterface:
             async def disconnect(self):
                 pass
 
-            async def send_message(self, message: MCPRequest) -> None:
-                pass
-
             async def send_notification(self, notification: MCPNotification) -> None:
                 pass
-
-            async def receive_message(self) -> MCPResponse:
-                return MCPResponse(jsonrpc="2.0", id=1, result={})
 
             async def get_next_notification(self):
                 return MCPNotification(jsonrpc="2.0", method="test/notification")
@@ -106,18 +98,9 @@ class TestTransportMethodSignatures:
             async def disconnect(self):
                 self._connected = False
 
-            async def send_message(self, message: MCPRequest) -> None:
-                if not self._connected:
-                    raise RuntimeError("Not connected")
-
             async def send_notification(self, notification: MCPNotification) -> None:
                 if not self._connected:
                     raise RuntimeError("Not connected")
-
-            async def receive_message(self) -> MCPResponse:
-                if not self._connected:
-                    raise RuntimeError("Not connected")
-                return MCPResponse(jsonrpc="2.0", id=1, result={})
 
             async def get_next_notification(self):
                 if not self._connected:
@@ -150,28 +133,17 @@ class TestTransportMethodSignatures:
         assert not mock_transport.is_connected()
 
     @pytest.mark.asyncio
-    async def test_send_message_signature(self, mock_transport):
-        """Test send_message method signature."""
+    async def test_send_and_receive_signature(self, mock_transport):
+        """Test send_and_receive method signature."""
         request = MCPRequest(jsonrpc="2.0", method="test", id=1)
 
         # Should fail when not connected
         with pytest.raises(RuntimeError):
-            await mock_transport.send_message(request)
+            await mock_transport.send_and_receive(request)
 
         # Should work when connected
         await mock_transport.connect()
-        await mock_transport.send_message(request)  # Should not raise
-
-    @pytest.mark.asyncio
-    async def test_receive_message_signature(self, mock_transport):
-        """Test receive_message method signature."""
-        # Should fail when not connected
-        with pytest.raises(RuntimeError):
-            await mock_transport.receive_message()
-
-        # Should work when connected
-        await mock_transport.connect()
-        response = await mock_transport.receive_message()
+        response = await mock_transport.send_and_receive(request)
         assert isinstance(response, MCPResponse)
         assert response.jsonrpc == "2.0"
 

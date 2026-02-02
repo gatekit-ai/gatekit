@@ -8,10 +8,11 @@ MCP client-server communications through a 6-step request processing pipeline.
 import asyncio
 import logging
 import random
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from gatekit.config.models import ProxyConfig
+from gatekit.config.models import ProxyConfig, UpstreamConfig
+from gatekit.config.loader import ConfigLoader
 from gatekit.plugins.manager import PluginManager
 from gatekit._version import __version__
 from gatekit.plugins.interfaces import (
@@ -21,6 +22,7 @@ from gatekit.plugins.interfaces import (
 from gatekit.protocol.messages import MCPRequest, MCPResponse, MCPNotification
 from gatekit.protocol.errors import MCPErrorCodes, create_error_response
 from gatekit.server_manager import ServerManager
+from gatekit.transport.errors import HttpSessionExpired
 from gatekit.core.routing import (
     RoutedRequest,
     parse_incoming_request,
@@ -47,20 +49,30 @@ class MCPProxy:
     """Main proxy server that orchestrates plugins and transport.
 
     The MCPProxy implements a 6-step request processing pipeline:
-    1. Security check through plugins
-    2. Request logging
-    3. Plugin decision handling
-    4. Upstream forwarding (if allowed)
-    5. Response filtering
-    6. Response logging
 
-    This implementation uses the YAML-based plugin configuration system.
+    Class Attributes:
+        HOT_RELOAD_SUPPORT: Known MCP clients and their hot-reload capability.
+            Exact match only (no substring matching) to avoid misclassification.
+            Unknown clients default to False (conservative).
     """
+
+    # Known clients and their hot-reload support (exact matches only)
+    # Conservative: unknown clients default to False
+    HOT_RELOAD_SUPPORT: Dict[str, bool] = {
+        # Confirmed working
+        "github-copilot": True,
+        # Confirmed broken/unsupported
+        "claude-code": False,  # Claimed but broken per our testing
+        "claude": False,  # Claude Desktop
+        "claude-desktop": False,  # Possible variant
+        "cursor": False,  # Confirmed in forum post
+    }
 
     def __init__(
         self,
         config: ProxyConfig,
         config_directory: Optional[Path] = None,
+        config_path: Optional[Path] = None,
         plugin_manager=None,
         server_manager=None,
         stdio_server=None,
@@ -70,6 +82,7 @@ class MCPProxy:
         Args:
             config: Proxy configuration including upstream and transport settings
             config_directory: Directory containing the configuration file (for path resolution)
+            config_path: Path to configuration file (for hot-reload monitoring)
             plugin_manager: Optional plugin manager (for testing)
             server_manager: Optional server manager (for testing)
             stdio_server: Optional stdio server (for testing)
@@ -86,21 +99,99 @@ class MCPProxy:
         # Request tracking for notification routing
         self._request_to_server: Dict[str, str] = {}
 
+        # Client info and hot-reload capability tracking
+        # Hot-reload is disabled by default until client capability is verified
+        self._client_info: Optional[Dict[str, Any]] = None
+        self._hot_reload_enabled: bool = False  # Conservative default
+
+        # Hot-reload configuration tracking
+        self._config_path: Optional[Path] = config_path
+        self._config_directory: Optional[Path] = config_directory
+        self._config_mtime: Optional[float] = None
+        self._reload_lock = asyncio.Lock()
+
+        # Generation-based plugin manager tracking (prevents cleanup during in-flight requests)
+        self._plugin_manager_generation = 0
+        self._active_requests_per_generation: Dict[int, int] = {0: 0}
+        self._generation_lock = asyncio.Lock()
+
+        # Notification listener task tracking (for dynamic server management)
+        self._notification_tasks: Dict[str, asyncio.Task] = {}
+
+        # Plugin cleanup task tracking (to cancel on shutdown)
+        self._plugin_cleanup_tasks: List[asyncio.Task] = []
+
+        # Initialize config mtime if config path exists
+        if config_path and config_path.exists():
+            try:
+                self._config_mtime = config_path.stat().st_mtime
+            except OSError:
+                pass
+
         # Initialize components (allow injection for testing)
         if config.transport == "http":
             raise NotImplementedError("HTTP transport not implemented in v0.1.0")
+
+        # Add ALL upstreams to ServerManager (including disabled ones)
+        # This allows disabled servers to be enabled later via hot-reload
+        # ServerManager.connect_all() will only connect enabled servers
+        enabled_count = sum(1 for u in config.upstreams if u.enabled)
+        disabled_count = len(config.upstreams) - enabled_count
+        if disabled_count > 0:
+            disabled_names = [u.name for u in config.upstreams if not u.enabled]
+            logger.info(
+                f"{disabled_count} upstream server(s) configured but disabled: {', '.join(disabled_names)}"
+            )
 
         # Initialize plugin manager with plugin configuration if provided
         plugin_config = config.plugins.to_dict() if config.plugins else {}
         self._plugin_manager = plugin_manager or PluginManager(
             plugin_config, config_directory
         )
-        self._server_manager = server_manager or ServerManager(config.upstreams)
+        self._server_manager = server_manager or ServerManager(
+            config.upstreams,  # Pass ALL upstreams, not just enabled
+            request_timeout=config.timeouts.request_timeout,
+        )
         self._stdio_server = stdio_server or StdioServer()
 
         logger.info(
-            f"Initialized MCPProxy with {config.transport} transport for {len(config.upstreams)} upstream server(s)"
+            f"Initialized MCPProxy with {config.transport} transport for {enabled_count} enabled upstream server(s)"
         )
+
+    def _check_client_hot_reload_support(self, client_name: str) -> bool:
+        """Check if client supports hot-reload notifications.
+
+        Uses exact matching only (no substring matching) to avoid misclassification.
+        Unknown clients default to False (conservative).
+
+        Args:
+            client_name: The client name from the MCP initialize request.
+
+        Returns:
+            True if the client is known to support hot-reload, False otherwise.
+        """
+        # Config override takes precedence
+        if hasattr(self, "config") and self.config is not None:
+            hot_reload_setting = getattr(self.config, "hot_reload", "auto")
+            if hot_reload_setting == "enabled":
+                return True
+            if hot_reload_setting == "disabled":
+                return False
+            # "auto" falls through to client detection
+
+        # Normalize client name for matching (exact match only)
+        normalized = client_name.lower().replace(" ", "-").replace("_", "-")
+
+        # Exact match only - no substring matching to avoid misclassification
+        if normalized in self.HOT_RELOAD_SUPPORT:
+            return self.HOT_RELOAD_SUPPORT[normalized]
+
+        # Unknown client - default to disabled (conservative)
+        logger.debug(
+            f"Unknown client '{client_name}' (normalized: '{normalized}') - "
+            "defaulting to hot-reload disabled"
+        )
+        return False
 
     async def start(self) -> None:
         """Start the proxy server and initialize all components.
@@ -127,7 +218,11 @@ class MCPProxy:
             # Connect to all upstream servers
             successful, failed = await self._server_manager.connect_all()
 
-            if successful == 0:
+            # Check if there are any enabled servers configured
+            enabled_count = sum(1 for u in self.config.upstreams if u.enabled)
+
+            if successful == 0 and enabled_count > 0:
+                # Enabled servers exist but none connected - this is a fatal error
                 error_details = self._server_manager.get_connection_errors()
                 error_msg = (
                     f"All upstream servers failed to connect: {error_details}"
@@ -136,6 +231,11 @@ class MCPProxy:
                 )
                 logger.error(error_msg)
                 raise RuntimeError(error_msg)
+            elif successful == 0 and enabled_count == 0:
+                # All servers are disabled - this is OK, they can be enabled via hot-reload
+                logger.info(
+                    "No enabled servers at startup. Servers can be enabled via hot-reload."
+                )
             elif failed > 0:
                 logger.warning(
                     f"Connected to {successful} servers, {failed} failed to connect"
@@ -231,6 +331,14 @@ class MCPProxy:
         if not self._is_running:
             raise RuntimeError("Proxy is not running")
 
+        # Step 0: Check for config changes (hot-reload)
+        await self._check_and_reload_config()
+
+        # Acquire generation token and capture plugin_manager reference
+        # CRITICAL: Capture reference to ensure consistency throughout request
+        generation = await self._acquire_generation()
+        plugin_manager = self._plugin_manager
+
         self._client_requests += 1
         self._concurrent_requests += 1
         self._max_concurrent_observed = max(
@@ -276,7 +384,7 @@ class MCPProxy:
                     )
 
                     # Log the rejected request (no target server since it couldn't be parsed)
-                    await self._plugin_manager.log_request(
+                    await plugin_manager.log_request(
                         request, rejected_pipeline, None
                     )
 
@@ -287,7 +395,7 @@ class MCPProxy:
                         pipeline_outcome=PipelineOutcome.ERROR,
                         capture_content=False,
                     )
-                    await self._plugin_manager.log_response(
+                    await plugin_manager.log_response(
                         request, routed, error_pipeline, None
                     )
                 except Exception as e:
@@ -306,7 +414,7 @@ class MCPProxy:
 
             # Step 1: Run request through processing pipeline with clean request
             try:
-                request_pipeline = await self._plugin_manager.process_request(
+                request_pipeline = await plugin_manager.process_request(
                     routed.request, routed.target_server
                 )
             except Exception as e:
@@ -338,7 +446,7 @@ class MCPProxy:
                     )
                 # Log request & synthetic response pipeline
                 try:
-                    await self._plugin_manager.log_request(
+                    await plugin_manager.log_request(
                         routed.request, request_pipeline, routed.target_server
                     )
                     # Create minimal response pipeline for auditing symmetry
@@ -348,7 +456,7 @@ class MCPProxy:
                         pipeline_outcome=PipelineOutcome.COMPLETED_BY_MIDDLEWARE,
                         capture_content=request_pipeline.capture_content,
                     )
-                    await self._plugin_manager.log_response(
+                    await plugin_manager.log_response(
                         routed.request,
                         completed,
                         response_pipeline,
@@ -361,12 +469,14 @@ class MCPProxy:
                 return completed
 
             # Log request pipeline (non-completed)
-            try:
-                await self._plugin_manager.log_request(
-                    routed.request, request_pipeline, routed.target_server
-                )
-            except Exception as e:
-                logger.warning(f"Request logging failed for request {request_id}: {e}")
+            # Skip for broadcast methods — per-server logging happens in _broadcast_request
+            if not self._is_broadcast_method(routed.request.method):
+                try:
+                    await plugin_manager.log_request(
+                        routed.request, request_pipeline, routed.target_server
+                    )
+                except Exception as e:
+                    logger.warning(f"Request logging failed for request {request_id}: {e}")
 
             # Blocked request
             if request_pipeline.pipeline_outcome == PipelineOutcome.BLOCKED:
@@ -387,7 +497,7 @@ class MCPProxy:
                         pipeline_outcome=PipelineOutcome.BLOCKED,
                         capture_content=False,
                     )
-                    await self._plugin_manager.log_response(
+                    await plugin_manager.log_response(
                         routed.request,
                         error_response,
                         blocked_pipeline,
@@ -416,7 +526,7 @@ class MCPProxy:
                         pipeline_outcome=PipelineOutcome.ERROR,
                         capture_content=False,
                     )
-                    await self._plugin_manager.log_response(
+                    await plugin_manager.log_response(
                         routed.request,
                         error_response,
                         err_pipeline,
@@ -459,7 +569,7 @@ class MCPProxy:
                             pipeline_outcome=PipelineOutcome.ERROR,
                             capture_content=False,
                         )
-                        await self._plugin_manager.log_response(
+                        await plugin_manager.log_response(
                             routed.request,
                             error_response,
                             err_pipeline,
@@ -490,7 +600,7 @@ class MCPProxy:
                 response = error_response
             # Step 5: Response filtering via pipeline
             try:
-                response_pipeline = await self._plugin_manager.process_response(
+                response_pipeline = await plugin_manager.process_response(
                     routed.request, response, routed.target_server
                 )
             except Exception as e:
@@ -542,12 +652,14 @@ class MCPProxy:
                     response = response_pipeline.final_content
 
             # Step 6: Log response pipeline
-            try:
-                await self._plugin_manager.log_response(
-                    routed.request, response, response_pipeline, routed.target_server
-                )
-            except Exception as e:
-                logger.warning(f"Response logging failed for request {request_id}: {e}")
+            # Skip for broadcast methods — per-server logging happens in _broadcast_request
+            if not self._is_broadcast_method(routed.request.method):
+                try:
+                    await plugin_manager.log_response(
+                        routed.request, response, response_pipeline, routed.target_server
+                    )
+                except Exception as e:
+                    logger.warning(f"Response logging failed for request {request_id}: {e}")
 
             # Add metadata to all responses for consistency (if not already added by broadcast)
             if response.result is not None and isinstance(response.result, dict):
@@ -584,6 +696,8 @@ class MCPProxy:
 
             return error_response
         finally:
+            # Release generation token
+            await self._release_generation(generation)
             # Clean up completed request tracking
             if request_id:
                 self._cleanup_completed_request(request_id)
@@ -611,13 +725,31 @@ class MCPProxy:
 
         logger.debug(f"Processing notification: {notification.method}")
 
+        # Acquire generation token and capture plugin_manager reference
+        generation = await self._acquire_generation()
+        plugin_manager = self._plugin_manager
+
         try:
+            # Determine target server for audit attribution
+            # - notifications/cancelled: look up from request tracking
+            # - notifications/initialized: broadcast (no single server)
+            # - Other: unknown at this point
+            notification_server_name = None
+            if notification.method == "notifications/cancelled" and notification.params:
+                request_id_for_cancel = notification.params.get("requestId")
+                if request_id_for_cancel:
+                    notification_server_name = self._request_to_server.get(
+                        request_id_for_cancel
+                    )
+
             # Process notification through plugins (for auditing)
             # Note: Security plugins typically don't block notifications
-            pipeline = await self._plugin_manager.process_notification(notification)
+            pipeline = await plugin_manager.process_notification(notification)
 
             # Log notification to auditing plugins (before outcome handling, like responses)
-            await self._plugin_manager.log_notification(notification, pipeline)
+            await plugin_manager.log_notification(
+                notification, pipeline, notification_server_name
+            )
 
             # Middleware completion
             if pipeline.pipeline_outcome == PipelineOutcome.COMPLETED_BY_MIDDLEWARE:
@@ -648,41 +780,51 @@ class MCPProxy:
         except Exception as e:
             logger.exception(f"Error processing notification {notification.method}: {e}")
             # Notifications don't get error responses, so we just log the error
+        finally:
+            await self._release_generation(generation)
 
     async def _listen_for_upstream_notifications(self) -> None:
-        """Background task to listen for notifications from all upstream servers.
+        """Background task to manage notification listeners for all upstream servers.
 
-        This method creates listener tasks for all connected servers and forwards
-        notifications to the client after processing through plugins.
+        This method starts listener tasks for all connected servers using the
+        _notification_tasks tracking dict. It runs for the lifetime of the proxy,
+        periodically cleaning up finished tasks. New servers added via hot-reload
+        will have their listeners started by _start_notification_listener().
         """
         logger.info("Starting upstream notification listeners")
 
-        tasks = []
+        # Start initial listeners for all connected servers
         for server_name, conn in self._server_manager.connections.items():
             if conn.status == "connected" and conn.transport:
-                task = asyncio.create_task(
-                    self._listen_server_notifications(server_name, conn)
-                )
-                tasks.append(task)
+                self._start_notification_listener(server_name)
 
-        if not tasks:
+        if not self._notification_tasks:
             logger.warning("No connected servers for notification listening")
-            return
+            # Don't return - stay running to pick up new servers via hot-reload
 
         try:
-            # Wait for all tasks (they run until cancelled or connection lost)
-            await asyncio.gather(*tasks, return_exceptions=True)
-        except Exception as e:
-            logger.exception(f"Error in notification listeners: {e}")
+            # Keep running until proxy stops (listeners run independently)
+            while self._is_running:
+                # Clean up finished tasks
+                finished = [
+                    name
+                    for name, task in self._notification_tasks.items()
+                    if task.done()
+                ]
+                for name in finished:
+                    self._notification_tasks.pop(name, None)
+                await asyncio.sleep(1)  # Periodic cleanup
+        except asyncio.CancelledError:
+            pass
         finally:
-            # Cancel any remaining tasks to prevent resource leaks
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
+            # Cancel all listeners on shutdown
+            for task in self._notification_tasks.values():
+                task.cancel()
+            if self._notification_tasks:
+                await asyncio.gather(
+                    *self._notification_tasks.values(), return_exceptions=True
+                )
+            self._notification_tasks.clear()
 
         logger.info("All upstream notification listeners stopped")
 
@@ -749,7 +891,7 @@ class MCPProxy:
     async def _broadcast_notification_to_all_servers(
         self, notification: MCPNotification
     ) -> None:
-        """Broadcast notification to all connected servers."""
+        """Broadcast notification to all connected and enabled servers."""
         if not hasattr(self._server_manager, "connections"):
             logger.debug("No connections available for broadcast")
             return
@@ -758,6 +900,9 @@ class MCPProxy:
         error_count = 0
 
         for server_name, conn in self._server_manager.connections.items():
+            # Skip disabled servers - they should not receive notifications
+            if hasattr(conn, "config") and not conn.config.enabled:
+                continue
             if conn.status == "connected":
                 try:
                     await conn.transport.send_notification(notification)
@@ -826,7 +971,13 @@ class MCPProxy:
         max_consecutive_errors = 10
 
         try:
-            while self._is_running and conn.status == "connected":
+            # Check enabled status in loop condition - listener should stop if server is disabled
+            # Use hasattr for defensive check against mock objects in tests
+            while (
+                self._is_running
+                and conn.status == "connected"
+                and (not hasattr(conn, "config") or conn.config.enabled)
+            ):
                 try:
                     # Get notification from this server's transport
                     if hasattr(conn.transport, "get_server_to_client_notification"):
@@ -848,14 +999,16 @@ class MCPProxy:
                     # Unlike tools/resources/prompts, notifications don't need namespacing
                     modified_notification = notification
 
-                    # Process notification through plugins
+                    # Process notification through plugins with generation tracking
+                    generation = await self._acquire_generation()
+                    plugin_manager = self._plugin_manager
                     try:
-                        pipeline = await self._plugin_manager.process_notification(
+                        pipeline = await plugin_manager.process_notification(
                             modified_notification, server_name
                         )
 
                         # Log notification to auditing plugins (before outcome handling, like responses)
-                        await self._plugin_manager.log_notification(
+                        await plugin_manager.log_notification(
                             modified_notification, pipeline, server_name
                         )
 
@@ -894,6 +1047,8 @@ class MCPProxy:
                             f"Error processing notification {notification.method} from {server_display}: {e}"
                         )
                         # Don't forward notifications that can't be processed
+                    finally:
+                        await self._release_generation(generation)
 
                 except asyncio.CancelledError:
                     # Normal shutdown - task was cancelled
@@ -939,6 +1094,25 @@ class MCPProxy:
 
     async def _cleanup(self) -> None:
         """Internal cleanup method for stopping resources."""
+        # Stop all notification listeners first
+        for _name, task in list(self._notification_tasks.items()):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._notification_tasks.clear()
+
+        # Cancel any pending plugin cleanup tasks
+        for task in self._plugin_cleanup_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._plugin_cleanup_tasks.clear()
+
         try:
             await self._stdio_server.stop()
         except Exception as e:
@@ -953,6 +1127,459 @@ class MCPProxy:
             await self._plugin_manager.cleanup()
         except Exception as e:
             logger.warning(f"Error cleaning up plugins: {e}")
+
+    # --- Generation-Based Plugin Manager Tracking ---
+
+    async def _acquire_generation(self) -> int:
+        """Acquire a generation token before processing a request.
+
+        Returns the current generation number. The caller must call
+        _release_generation with this number when done.
+        """
+        async with self._generation_lock:
+            gen = self._plugin_manager_generation
+            self._active_requests_per_generation[gen] = (
+                self._active_requests_per_generation.get(gen, 0) + 1
+            )
+            return gen
+
+    async def _release_generation(self, generation: int) -> None:
+        """Release a generation token after processing a request."""
+        async with self._generation_lock:
+            count = self._active_requests_per_generation.get(generation, 0)
+            if count > 1:
+                self._active_requests_per_generation[generation] = count - 1
+            else:
+                self._active_requests_per_generation.pop(generation, None)
+
+    # --- Hot-Reload Configuration Monitoring ---
+
+    async def _check_and_reload_config(self) -> None:
+        """Check for config changes and apply them.
+
+        Called at the start of each request. Uses mtime polling for
+        efficient cross-platform change detection.
+
+        Skips entirely if the connected client doesn't support hot-reload
+        (list_changed notifications). This is determined during initialize.
+        """
+        # Skip entirely if client doesn't support hot-reload
+        # Default to False (disabled) - conservative until client capability verified
+        if not getattr(self, "_hot_reload_enabled", False):
+            return
+
+        if not self._config_path or not self._config_path.exists():
+            logger.debug("DEBUG hot-reload: No config path or file doesn't exist")
+            return
+
+        # Quick mtime check (no lock needed)
+        try:
+            current_mtime = self._config_path.stat().st_mtime
+        except OSError:
+            return
+
+        if current_mtime == self._config_mtime:
+            return
+
+        logger.info(f"DEBUG hot-reload: mtime changed {self._config_mtime} -> {current_mtime}")
+
+        # Double-check under lock (prevents concurrent reloads)
+        async with self._reload_lock:
+            try:
+                current_mtime = self._config_path.stat().st_mtime
+            except OSError:
+                return
+
+            if current_mtime == self._config_mtime:
+                logger.info("DEBUG hot-reload: mtime unchanged after acquiring lock (concurrent reload)")
+                return
+
+            logger.info("DEBUG hot-reload: Applying config changes...")
+            success = await self._apply_config_changes()
+            logger.info(f"DEBUG hot-reload: Apply result: {success}")
+            # Only update mtime if reload succeeded - this allows retry on next request
+            if success:
+                self._config_mtime = current_mtime
+
+    async def _apply_config_changes(self) -> bool:
+        """Load new config and apply server + plugin changes.
+
+        TRANSACTIONAL: Only updates self.config after ALL changes succeed.
+        If any step fails, the entire reload is aborted.
+
+        Order: servers → plugins → timeouts
+        This ensures plugin failures don't leave servers in an inconsistent state.
+
+        Returns:
+            True if reload succeeded, False if any step failed
+        """
+        try:
+            loader = ConfigLoader()
+            new_config = loader.load_from_file(self._config_path)
+        except Exception as e:
+            # Use error (not exception) - stack traces confuse users for config errors
+            logger.error(f"Hot-reload failed: invalid config: {e}")  # noqa: TRY400
+            return False
+
+        # Reject transport changes
+        if new_config.transport != self.config.transport:
+            logger.warning("Hot-reload: transport changes require restart")
+            return False
+
+        # === PRE-FLIGHT CHECKS (before making any changes) ===
+        old_plugins = self.config.plugins.to_dict() if self.config.plugins else {}
+        new_plugins = new_config.plugins.to_dict() if new_config.plugins else {}
+
+        # Check for CSV format-breaking changes
+        if self._is_csv_format_breaking_change(old_plugins, new_plugins):
+            logger.error(
+                "Hot-reload rejected: CSV format options changed without changing output_file. "
+                "This would corrupt the log file. Change output_file or restart the gateway."
+            )
+            return False  # Abort entire reload
+
+        # === SERVER HOT-RELOAD (do first - less likely to have cascading failures) ===
+        old_servers = {u.name: u for u in self.config.upstreams}
+        new_servers = {u.name: u for u in new_config.upstreams}
+
+        added = set(new_servers) - set(old_servers)
+        removed = set(old_servers) - set(new_servers)
+        potentially_modified = set(old_servers) & set(new_servers)
+
+        logger.info(f"DEBUG servers: added={added}, removed={removed}, potentially_modified={potentially_modified}")
+        for name in potentially_modified:
+            old, new = old_servers[name], new_servers[name]
+            logger.info(f"DEBUG server '{name}': enabled {old.enabled} -> {new.enabled}")
+
+        try:
+            for name in removed:
+                await self._remove_server(name)
+                logger.info(f"Hot-reload: Removed server '{name}'")
+
+            for name in potentially_modified:
+                old, new = old_servers[name], new_servers[name]
+                await self._update_server(old, new)
+
+            for name in added:
+                config = new_servers[name]
+                # Add ALL servers to connections (enabled or not)
+                # This ensures disabled servers can be enabled later via hot-reload
+                await self._add_server(config)
+                if config.enabled:
+                    logger.info(f"Hot-reload: Added and connected server '{name}'")
+                else:
+                    logger.info(f"Hot-reload: Added server '{name}' (disabled)")
+        except Exception as e:
+            # Use error (not exception) - stack traces confuse users for config errors
+            logger.error(f"Hot-reload failed: server update error: {e}")  # noqa: TRY400
+            # Server changes may be partial, but plugins are untouched.
+            return False
+
+        # === PLUGIN HOT-RELOAD (do after servers - most likely to fail) ===
+        plugins_changed = new_config.plugins != self.config.plugins
+        if plugins_changed:
+            try:
+                # Log what's changing
+                self._log_plugin_config_changes(old_plugins, new_plugins)
+                await self._reload_plugins(new_config)
+                logger.info("Hot-reload: Plugin configuration reloaded")
+            except Exception as e:
+                # Use error (not exception) - stack traces confuse users for config errors
+                logger.error(f"Hot-reload failed: plugin reload error: {e}")  # noqa: TRY400
+                # Note: Server changes already applied. This leaves servers updated but
+                # plugins old. Since server changes are typically additive/safe and plugin
+                # changes are policy changes, this ordering minimizes security impact.
+                return False
+
+        # === TIMEOUT HOT-RELOAD ===
+        # Note: This updates the default for NEW connections only. Existing transports
+        # keep their original timeout until they reconnect. This is by design - it avoids
+        # complex transport API changes and ensures in-flight requests use consistent timeouts.
+        if new_config.timeouts != self.config.timeouts:
+            self._server_manager._request_timeout = new_config.timeouts.request_timeout
+            logger.info("Hot-reload: Timeout configuration updated (applies to new connections)")
+
+        # === ALL CHANGES SUCCEEDED - Update config reference ===
+        self.config = new_config
+
+        # Send capability change notifications to client
+        await self._notify_capability_changes()
+
+        return True
+
+    async def _reload_plugins(self, new_config: ProxyConfig) -> None:
+        """Reload plugins with generation-based safe swap."""
+        # Create new plugin manager
+        plugin_config = new_config.plugins.to_dict() if new_config.plugins else {}
+        new_plugin_manager = PluginManager(plugin_config, self._config_directory)
+        await new_plugin_manager.load_plugins()
+
+        # Atomic swap under lock
+        async with self._generation_lock:
+            old_plugin_manager = self._plugin_manager
+            old_generation = self._plugin_manager_generation
+
+            self._plugin_manager = new_plugin_manager
+            self._plugin_manager_generation += 1
+            self._active_requests_per_generation[self._plugin_manager_generation] = 0
+
+        # Schedule background cleanup of old plugin manager (track for shutdown cancellation)
+        cleanup_task = asyncio.create_task(
+            self._cleanup_old_plugin_manager(old_plugin_manager, old_generation)
+        )
+        self._plugin_cleanup_tasks.append(cleanup_task)
+        # Clean up completed tasks from the list to prevent unbounded growth
+        self._plugin_cleanup_tasks = [t for t in self._plugin_cleanup_tasks if not t.done()]
+
+    async def _cleanup_old_plugin_manager(
+        self, old_manager: PluginManager, generation: int
+    ) -> None:
+        """Wait for all requests using old generation to complete, then cleanup.
+
+        Has timeouts to prevent hanging forever if requests are stuck.
+        """
+        max_wait_time = 60.0  # 60 seconds max wait for in-flight requests
+        wait_time = 0.0
+        poll_interval = 0.05  # 50ms
+
+        while wait_time < max_wait_time:
+            async with self._generation_lock:
+                count = self._active_requests_per_generation.get(generation, 0)
+                if count == 0:
+                    self._active_requests_per_generation.pop(generation, None)
+                    break
+            await asyncio.sleep(poll_interval)
+            wait_time += poll_interval
+        else:
+            # Timeout reached - force cleanup anyway
+            logger.warning(
+                f"Timeout waiting for generation {generation} requests to complete. "
+                f"Forcing cleanup with {count} request(s) still in flight."
+            )
+            async with self._generation_lock:
+                self._active_requests_per_generation.pop(generation, None)
+
+        try:
+            # Timeout on cleanup() call to prevent hanging on stuck plugins
+            await asyncio.wait_for(old_manager.cleanup(), timeout=30.0)
+            logger.debug(f"Cleaned up old plugin manager (generation {generation})")
+        except asyncio.TimeoutError:
+            # Timeout errors don't need stack traces - the timeout is self-explanatory
+            logger.error(  # noqa: TRY400
+                f"Timeout cleaning up old plugin manager (generation {generation}). "
+                "Some plugin resources may not have been released."
+            )
+        except Exception as e:
+            # Cleanup errors are logged but don't need full stack traces
+            logger.error(f"Error cleaning up old plugin manager: {e}")  # noqa: TRY400
+
+    def _is_csv_format_breaking_change(
+        self, old_config: dict, new_config: dict
+    ) -> bool:
+        """Check if CSV auditing format changed without output_file change."""
+        old_csv = self._get_csv_plugin_config(old_config)
+        new_csv = self._get_csv_plugin_config(new_config)
+
+        if not old_csv or not new_csv:
+            return False  # No CSV plugin configured
+
+        # Same output file?
+        if old_csv.get("output_file") != new_csv.get("output_file"):
+            return False  # Different files - no corruption risk
+
+        # Check format options
+        old_fmt = old_csv.get("csv_config", {})
+        new_fmt = new_csv.get("csv_config", {})
+
+        format_fields = ["delimiter", "quote_char", "quote_style", "escape_char"]
+        for field in format_fields:
+            if old_fmt.get(field) != new_fmt.get(field):
+                return True  # Format changed with same file
+
+        return False
+
+    def _get_csv_plugin_config(self, plugins_config: dict) -> Optional[dict]:
+        """Extract CSV auditing plugin config from plugins dict."""
+        auditing = plugins_config.get("auditing", {})
+        for _scope, plugins in auditing.items():
+            if isinstance(plugins, list):
+                for plugin in plugins:
+                    if plugin.get("handler") == "csv_audit":
+                        return plugin.get("config", {})
+        return None
+
+    def _log_plugin_config_changes(
+        self, old_plugins: dict, new_plugins: dict
+    ) -> None:
+        """Log all plugin configuration changes."""
+        # Get all plugin names from both configs
+        old_names = self._get_plugin_names(old_plugins)
+        new_names = self._get_plugin_names(new_plugins)
+
+        # Log added plugins
+        for name in new_names - old_names:
+            logger.info(f"Hot-reload: Plugin '{name}' added")
+
+        # Log removed plugins
+        for name in old_names - new_names:
+            logger.info(f"Hot-reload: Plugin '{name}' removed")
+
+        # Log modified plugins - only if config actually changed
+        for name in old_names & new_names:
+            old_cfg = self._get_plugin_config_by_name(old_plugins, name)
+            new_cfg = self._get_plugin_config_by_name(new_plugins, name)
+            if old_cfg != new_cfg:
+                logger.info(f"Hot-reload: Plugin '{name}' configuration changed")
+
+    def _get_plugin_config_by_name(self, plugins_config: dict, handler_name: str) -> Optional[dict]:
+        """Extract plugin config for a specific handler name."""
+        for category in ["middleware", "security", "auditing"]:
+            category_config = plugins_config.get(category, {})
+            for _scope, plugins in category_config.items():
+                if isinstance(plugins, list):
+                    for plugin in plugins:
+                        if plugin.get("handler") == handler_name:
+                            return plugin.get("config", {})
+        return None
+
+    def _get_plugin_names(self, plugins_config: dict) -> set:
+        """Extract set of plugin handler names from config dict."""
+        names = set()
+        for category in ["middleware", "security", "auditing"]:
+            category_config = plugins_config.get(category, {})
+            for _scope, plugins in category_config.items():
+                if isinstance(plugins, list):
+                    for plugin in plugins:
+                        if handler := plugin.get("handler"):
+                            names.add(handler)
+        return names
+
+    # --- Server Hot-Reload Helpers ---
+
+    async def _add_server(self, config: UpstreamConfig) -> None:
+        """Add a new server and start its notification listener if enabled."""
+        success = await self._server_manager.add_server(config)
+        # Only start notification listener if server is enabled and connected
+        if success and config.enabled:
+            self._start_notification_listener(config.name)
+
+    async def _remove_server(self, name: str) -> None:
+        """Stop notification listener and remove server."""
+        await self._stop_notification_listener(name)
+        await self._server_manager.remove_server(name)
+
+    async def _update_server(self, old: UpstreamConfig, new: UpstreamConfig) -> None:
+        """Handle server config updates.
+
+        Handles four cases:
+        1. enabled -> disabled: disconnect, keep in connections
+        2. disabled -> enabled (no reconnect needed): just connect
+        3. disabled -> enabled (reconnect needed): update_server handles remove+add+connect
+        4. enabled -> enabled (reconnect needed): update_server handles remove+add+connect
+        """
+        needs_reconnect = self._server_manager._needs_reconnect(old, new)
+
+        if old.enabled and not new.enabled:
+            # Case 1: Disabled - disconnect but keep in manager
+            await self._stop_notification_listener(old.name)
+            # Update config first (so enabled=False is stored)
+            await self._server_manager.update_server(new)
+            await self._server_manager.disconnect_server(old.name)
+            logger.info(f"Hot-reload: Disabled server '{old.name}'")
+
+        elif not old.enabled and new.enabled:
+            # Case 2/3: Enabling a previously disabled server
+            await self._stop_notification_listener(old.name)  # Safety: stop if somehow running
+
+            if needs_reconnect:
+                # Case 3: Connection settings changed - update_server does remove+add+connect
+                await self._server_manager.update_server(new)
+                # update_server with reconnect does add_server which connects if enabled
+                # So we just need to start the listener if connected
+            else:
+                # Case 2: No reconnect needed - just update config and connect
+                await self._server_manager.update_server(new)
+                await self._server_manager.connect_server(old.name)
+
+            conn = self._server_manager.get_connection(old.name)
+            if conn and conn.status == "connected":
+                self._start_notification_listener(old.name)
+                logger.info(f"Hot-reload: Enabled server '{old.name}'")
+            else:
+                logger.warning(f"Hot-reload: Failed to enable server '{old.name}'")
+
+        elif old.enabled and new.enabled:
+            # Case 4: Both enabled - check for reconnect-worthy changes
+            if needs_reconnect:
+                await self._stop_notification_listener(old.name)
+                # update_server handles remove+add+connect when needs_reconnect
+                await self._server_manager.update_server(new)
+                conn = self._server_manager.get_connection(old.name)
+                if conn and conn.status == "connected":
+                    self._start_notification_listener(old.name)
+                    logger.info(f"Hot-reload: Reconnected server '{old.name}'")
+                else:
+                    logger.warning(
+                        f"Hot-reload: Server '{old.name}' reconnect failed, "
+                        "notification listener not started"
+                    )
+            else:
+                # No reconnect needed - just update config
+                await self._server_manager.update_server(new)
+
+        else:
+            # disabled -> disabled: just update config
+            await self._server_manager.update_server(new)
+
+    def _start_notification_listener(self, name: str) -> None:
+        """Start notification listener task for a server."""
+        # Guard against double-starting
+        if name in self._notification_tasks and not self._notification_tasks[name].done():
+            return  # Already running
+
+        conn = self._server_manager.get_connection(name)
+        if conn and conn.status == "connected" and conn.transport:
+            task = asyncio.create_task(self._listen_server_notifications(name, conn))
+            self._notification_tasks[name] = task
+
+    async def _stop_notification_listener(self, name: str) -> None:
+        """Stop notification listener task for a server."""
+        task = self._notification_tasks.pop(name, None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    async def _notify_capability_changes(self) -> None:
+        """Notify client that capabilities may have changed."""
+        # Skip if client doesn't support hot-reload (list_changed notifications)
+        # Default to False (disabled) - conservative until client capability verified
+        if not getattr(self, "_hot_reload_enabled", False):
+            logger.debug("Skipping list_changed notifications (client doesn't support)")
+            return
+
+        # Only applicable for stdio transport (HTTP doesn't have persistent notification channel)
+        if not hasattr(self, "_stdio_server") or self._stdio_server is None:
+            logger.info("DEBUG notify: No stdio_server, skipping notifications")
+            return
+
+        logger.info("DEBUG notify: Sending list_changed notifications to client...")
+
+        # MCP spec: send list_changed notifications
+        # Include explicit empty params - some clients may expect this
+        notifications = [
+            MCPNotification(jsonrpc="2.0", method="notifications/tools/list_changed", params={}),
+            MCPNotification(jsonrpc="2.0", method="notifications/resources/list_changed", params={}),
+            MCPNotification(jsonrpc="2.0", method="notifications/prompts/list_changed", params={}),
+        ]
+        for notif in notifications:
+            try:
+                await self._stdio_server.write_notification(notif)
+                logger.info(f"DEBUG notify: Sent {notif.method}")
+            except Exception as e:
+                logger.warning(f"DEBUG notify: Failed to send {notif.method}: {e}")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -982,7 +1609,30 @@ class MCPProxy:
         return self.config.plugins.to_dict() if self.config.plugins else {}
 
     async def _handle_initialize(self, request: MCPRequest) -> MCPResponse:
-        """Handle initialize request by broadcasting to all servers."""
+        """Handle initialize request by broadcasting to all servers.
+
+        Also captures client info and determines hot-reload capability based on
+        the client's support for list_changed notifications.
+        """
+        # Capture client info and determine hot-reload capability
+        if request.params:
+            self._client_info = request.params.get("clientInfo", {})
+            client_name = self._client_info.get("name", "unknown")
+            client_version = self._client_info.get("version", "unknown")
+            logger.info(f"MCP client connected: {client_name} v{client_version}")
+
+            # Determine hot-reload capability based on client support
+            self._hot_reload_enabled = self._check_client_hot_reload_support(
+                client_name
+            )
+            if self._hot_reload_enabled:
+                logger.info(f"Hot-reload enabled for client '{client_name}'")
+            else:
+                logger.info(
+                    f"Hot-reload disabled for client '{client_name}' - "
+                    "config changes require restart"
+                )
+
         return await self._broadcast_request(request)
 
     async def _route_request(self, routed: RoutedRequest) -> MCPResponse:
@@ -1007,7 +1657,9 @@ class MCPProxy:
             logger.debug(f"Using mock server manager fallback for {request.method}")
             # For tests without real connections dict, create a minimal broadcast simulation
             # This ensures namespacing behavior is consistent between real and test scenarios
-            mock_response = await self._route_to_single_server(request)
+            # Wrap in RoutedRequest for type compatibility
+            routed = RoutedRequest(request=request, target_server=None)
+            mock_response = await self._route_to_single_server(routed)
 
             # If this is a list method, apply namespacing to match production behavior
             if (
@@ -1083,12 +1735,15 @@ class MCPProxy:
 
         # Broadcast to all servers and aggregate results
 
-        # Prepare concurrent tasks for all servers (connected or not - reconnection will be attempted)
+        # Prepare concurrent tasks for all ENABLED servers only
         tasks = []
         server_names = []
 
         for server_name, conn in self._server_manager.connections.items():
-            # Add task for each server (reconnection will be attempted if needed)
+            # Skip disabled servers - they should not participate in broadcasts
+            if not conn.config.enabled:
+                continue
+            # Add task for each enabled server (reconnection will be attempted if needed)
             tasks.append(self._send_request_with_reconnect(request, server_name, conn))
             server_names.append(server_name)
 
@@ -1101,12 +1756,44 @@ class MCPProxy:
         successful_servers = []
         total_servers = len(server_names)
 
+        # Use current plugin manager for per-server audit logging
+        # (caller _process_client_request already holds the generation token)
+        plugin_manager = self._plugin_manager
+
         for server_name, result in zip(server_names, results, strict=False):
             if isinstance(result, Exception):
                 server_desc = self._server_manager.get_server_description(server_name)
                 logger.warning(f"Failed to get response from {server_desc}: {result}")
                 errors.append({"server": server_name, "error": str(result)})
             elif isinstance(result, MCPResponse):
+                # Log per-server request and response for auditing (e.g. token counting)
+                try:
+                    req_pipeline = ProcessingPipeline(
+                        original_content=request,
+                        final_content=request,
+                        pipeline_outcome=PipelineOutcome.ALLOWED,
+                        capture_content=False,
+                    )
+                    await plugin_manager.log_request(
+                        request, req_pipeline, server_name
+                    )
+                    resp_pipeline = ProcessingPipeline(
+                        original_content=result,
+                        final_content=result,
+                        pipeline_outcome=(
+                            PipelineOutcome.ERROR if result.error
+                            else PipelineOutcome.ALLOWED
+                        ),
+                        capture_content=False,
+                    )
+                    await plugin_manager.log_response(
+                        request, result, resp_pipeline, server_name
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Auditing failed for broadcast to {server_name}: {e}"
+                    )
+
                 # Check if response has an error
                 if result.error:
                     server_desc = self._server_manager.get_server_description(
@@ -1249,9 +1936,14 @@ class MCPProxy:
         """Send request to a server with reconnection attempt if needed."""
         from gatekit.server_manager import ServerConnection
 
+        # Check if server is disabled - don't reconnect disabled servers
+        if hasattr(conn, "config") and not conn.config.enabled:
+            server_desc = self._server_manager.get_server_description(server_name)
+            raise Exception(f"{server_desc.capitalize()} is disabled")
+
         # Handle connection state
         if conn.status != "connected":
-            # Try one reconnection attempt
+            # Try one reconnection attempt (will be refused if disabled)
             if hasattr(self._server_manager, "reconnect_server"):
                 if not await self._server_manager.reconnect_server(server_name):
                     server_desc = self._server_manager.get_server_description(
@@ -1263,6 +1955,34 @@ class MCPProxy:
 
         # Send the request (with lock if available)
         try:
+            if isinstance(conn, ServerConnection):
+                async with conn.lock:
+                    response = await conn.transport.send_and_receive(request)
+            else:
+                response = await conn.transport.send_and_receive(request)
+            return response
+        except HttpSessionExpired:
+            # HTTP session expired - reconnect and retry once
+            server_desc = self._server_manager.get_server_description(server_name)
+            logger.info(f"Session expired for {server_desc}, reconnecting and retrying")
+
+            # Mark connection as disconnected
+            if hasattr(conn, "status"):
+                conn.status = "disconnected"
+
+            # Attempt reconnection
+            if hasattr(self._server_manager, "reconnect_server"):
+                reconnected = await self._server_manager.reconnect_server(server_name)
+            else:
+                reconnected = False
+
+            if not reconnected:
+                raise Exception(
+                    f"Request to {server_desc} failed: session expired and reconnection failed"
+                )
+
+            # Retry the request after successful reconnection
+            logger.debug(f"Retrying request to {server_desc} after session recovery")
             if isinstance(conn, ServerConnection):
                 async with conn.lock:
                     response = await conn.transport.send_and_receive(request)
@@ -1317,12 +2037,27 @@ class MCPProxy:
         self, conn, server_name: Optional[str], request: MCPRequest
     ) -> MCPResponse:
         """Internal request routing logic."""
+        # Check if server is disabled - don't route to disabled servers
+        if hasattr(conn, "config") and not conn.config.enabled:
+            server_desc = self._server_manager.get_server_description(server_name)
+            raise Exception(f"{server_desc.capitalize()} is disabled")
+
         if conn.status != "connected":
             # Check if already reconnecting
             if hasattr(conn, "_reconnecting") and conn._reconnecting:
-                # Wait for reconnection to complete
-                while conn._reconnecting:
+                # Wait for reconnection to complete (with timeout to prevent deadlock)
+                max_wait = 30.0  # 30 seconds max wait
+                wait_time = 0.0
+                while conn._reconnecting and wait_time < max_wait:
                     await asyncio.sleep(0.01)
+                    wait_time += 0.01
+                if wait_time >= max_wait:
+                    server_desc = self._server_manager.get_server_description(
+                        server_name
+                    )
+                    raise Exception(
+                        f"{server_desc.capitalize()} reconnection timed out"
+                    )
                 if conn.status != "connected":
                     server_desc = self._server_manager.get_server_description(
                         server_name
@@ -1357,6 +2092,33 @@ class MCPProxy:
         # Forward the clean request from RoutedRequest
         try:
             # Send the clean request directly - it's already denamespaced
+            response = await conn.transport.send_and_receive(request)
+            return response
+
+        except HttpSessionExpired:
+            # HTTP session expired - reconnect and retry once
+            server_desc = self._server_manager.get_server_description(server_name)
+            logger.info(f"Session expired for {server_desc}, reconnecting and retrying")
+
+            # Mark connection as disconnected
+            if hasattr(conn, "status"):
+                conn.status = "disconnected"
+
+            # Attempt reconnection
+            if hasattr(self._server_manager, "_reconnect_server_internal"):
+                reconnected = await self._server_manager._reconnect_server_internal(
+                    server_name
+                )
+            else:
+                reconnected = await self._server_manager.reconnect_server(server_name)
+
+            if not reconnected:
+                raise Exception(
+                    f"Request to {server_desc} failed: session expired and reconnection failed"
+                )
+
+            # Retry the request after successful reconnection
+            logger.debug(f"Retrying request to {server_desc} after session recovery")
             response = await conn.transport.send_and_receive(request)
             return response
 

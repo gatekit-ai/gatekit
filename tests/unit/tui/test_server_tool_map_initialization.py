@@ -45,11 +45,11 @@ class TestServerToolMapInitialization:
         assert "test-server" not in manager.server_tool_map
         assert draft_upstream.is_draft is True
         
-        # Simulate committing a command (as _commit_command_input does)
+        # Simulate committing a connection (as _commit_connection_input does)
         draft_upstream.command = ["python", "-m", "server"]
         draft_upstream.is_draft = False
-        
-        # Initialize tool map entry (this is what the fix adds to _commit_command_input)
+
+        # Initialize tool map entry (this is what the fix adds to _commit_connection_input)
         manager.server_tool_map["test-server"] = {
             "tools": [],
             "last_refreshed": None,

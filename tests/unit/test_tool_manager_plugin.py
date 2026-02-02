@@ -247,7 +247,7 @@ class TestSchemaAndStatus:
     """Validate schema helpers and status description."""
 
     def test_json_schema_only_has_tools(self):
-        schema = ToolManagerPlugin.get_json_schema()
+        schema = ToolManagerPlugin.get_config_schema()
         properties = schema["properties"]
         assert "mode" not in properties
         assert "tools" in properties
