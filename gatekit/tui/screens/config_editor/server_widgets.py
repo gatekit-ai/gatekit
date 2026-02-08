@@ -1,6 +1,5 @@
 """Reusable widgets for server management UI."""
 
-import asyncio
 from typing import Awaitable, Callable, Optional
 
 from textual.widgets import Button
@@ -11,6 +10,9 @@ class AsyncCallbackButton(Button):
 
     Handles both mouse clicks and Enter key presses by listening to Button.Pressed,
     which is the proper Textual pattern for button activation.
+
+    Uses Textual's worker system (not asyncio.create_task) so that callbacks
+    can use push_screen_wait and other APIs that require a worker context.
     """
 
     def __init__(
@@ -67,4 +69,4 @@ class AsyncCallbackButton(Button):
                         )
                     raise
 
-            asyncio.create_task(_run_callback_with_logging())
+            self.run_worker(_run_callback_with_logging(), exit_on_error=False)

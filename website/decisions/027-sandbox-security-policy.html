@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-027: Sandbox Security Policy - Gatekit Documentation</title>
+  <meta name="description" content="ADR-026 established OS-native sandboxing as the mechanism for isolating MCP server processes. This ADR documents the security policy decisions: what the sand...">
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script defer src="https://api.pirsch.io/pa.js" id="pianjs" data-code="GUYxLQ7LGQThWCqSrzrtg2qOOArCNKPS"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-027-sandbox-security-policy">ADR-027: Sandbox Security Policy</h1>
+<h2 id="context">Context</h2>
+<p>ADR-026 established OS-native sandboxing as the mechanism for isolating MCP server processes. This ADR documents the security policy decisions: what the sandbox allows and denies by default, how it handles failure, and how user-configured paths are applied.</p>
+<p>These decisions balance security (restrict as much as possible) against usability (sensible defaults that work for most servers with minimal configuration).</p>
+<h2 id="decision">Decision</h2>
+<h3 id="fail-closed-behavior">Fail-closed behavior</h3>
+<p>If a server has <code>sandbox: {enabled: true}</code> but no sandbox engine is available (e.g., Linux without bubblewrap installed, or Windows), Gatekit <strong>refuses to start the server</strong> rather than running it unsandboxed. This prevents a configuration that promises isolation from silently degrading to no isolation.</p>
+<p>The error message includes platform-specific installation instructions (e.g., <code>apt install bubblewrap</code> on Debian/Ubuntu).</p>
+<p><strong>Why not fail-open?</strong> A user who enables sandboxing has made a deliberate security decision. Silently ignoring it undermines trust and creates a false sense of security. The cost of a clear error is far lower than the cost of running an untrusted server without the isolation the user expects.</p>
+<h3 id="filesystem-policy-deny-all-default-with-allowlist">Filesystem policy: deny-all default with allowlist</h3>
+<p>The baseline is <strong>deny all filesystem access</strong>, then explicitly allow what the server needs:</p>
+<p><strong>System paths (implicitly readable):</strong></p>
+<ul>
+<li><code>/usr</code>, <code>/bin</code>, <code>/sbin</code>, <code>/lib</code>, <code>/etc</code>, <code>/opt</code> — binaries, libraries, certificates</li>
+<li>Platform-specific: <code>/Library</code>, <code>/System</code>, <code>/Applications</code> on macOS; <code>/proc</code>, <code>/nix</code> on Linux</li>
+</ul>
+<p><strong>Read-write (allowed by default):</strong></p>
+<ul>
+<li><code>/tmp</code> (fresh tmpfs on bubblewrap, allowed on Seatbelt)</li>
+<li><code>~/.npm/</code>, <code>~/.cache/</code>, <code>~/.local/</code> — package manager caches needed by npx, pip, etc.</li>
+<li>User-configured <code>paths</code> from the sandbox config</li>
+</ul>
+<p><strong>Always denied (sensitive credential directories):</strong></p>
+<ul>
+<li><code>~/.ssh</code> — SSH keys and configuration</li>
+<li><code>~/.gnupg</code> — GPG keys</li>
+<li><code>~/.aws</code> — AWS credentials</li>
+<li><code>~/.azure</code> — Azure authentication tokens</li>
+<li><code>~/.config/gcloud</code> — Google Cloud credentials</li>
+<li><code>~/.kube</code> — Kubernetes credentials and tokens</li>
+<li><code>~/.docker</code> — Docker registry credentials</li>
+<li><code>~/.git-credentials</code> — Git credential store</li>
+<li><code>~/.vault-token</code> — HashiCorp Vault tokens</li>
+<li><code>~/.terraform.d</code> — Terraform credentials</li>
+</ul>
+<p>Implementation differs by engine:</p>
+<ul>
+<li><strong>bubblewrap</strong>: Selectively mounts only needed paths. Sensitive paths overlaid with <code>--tmpfs</code>. Everything else is simply not mounted (invisible to the process).</li>
+<li><strong>Seatbelt</strong>: Denies all reads in the home directory <code>(deny file-read* (subpath &quot;~&quot;))</code>, then selectively allows specific subdirectories. Sensitive paths are protected by not being allowed. Note: Seatbelt has allow-wins semantics, so if a user allows a parent path (e.g., <code>paths: [&quot;~&quot;]</code>), sensitive subdirectories become accessible — a warning is logged in this case.</li>
+</ul>
+<p>Both approaches require symlink-aware path resolution to prevent traversal bypasses.</p>
+<p><strong>Why deny-all rather than deny-writes-only?</strong> A denylist approach (read everything, deny 10 known paths) is fundamentally weak: an MCP server with read access to the full filesystem plus network access can exfiltrate any sensitive file not on the deny list (.env files, database configs, API keys, etc.). Industry consensus (Docker, Flatpak, Deno, macOS App Sandbox) is deny-all with explicit allowlists.</p>
+<h3 id="network-allowed-by-default">Network: allowed by default</h3>
+<p>Most MCP servers need external API access (e.g., Context7 calls external APIs, web search servers fetch URLs). Denying network by default would break the majority of servers and require users to understand which servers need network access.</p>
+<p>When explicitly denied (<code>network: false</code>):</p>
+<ul>
+<li>bubblewrap: <code>--unshare-net</code> creates a new network namespace with loopback only</li>
+<li>Seatbelt: <code>(deny network-outbound)</code> blocks outgoing connections; Unix domain sockets are allowed (needed for some system IPC)</li>
+</ul>
+<p><strong>Why not deny by default?</strong> Unlike filesystem writes (where the damage from an accidental write is immediate and local), network access is fundamental to most MCP server functionality. Denying it by default would make the sandbox unusable without per-server configuration, defeating the &quot;just works&quot; goal.</p>
+<h3 id="explicit-paths-only-no-workspace-inference">Explicit paths only (no workspace inference)</h3>
+<p>Workspace paths must be explicitly configured via the <code>paths</code> field. There is no automatic inference from command arguments.</p>
+<p><strong>Why explicit-only rather than heuristic inference?</strong> Workspace inference from command arguments was considered but rejected:</p>
+<ol>
+<li><strong>Security risk</strong>: Implicit magic that grants write access based on heuristics is counter to the security principle of explicit-over-implicit</li>
+<li><strong>Unpredictable</strong>: Not all directory arguments are workspaces (some are read-only reference paths)</li>
+<li><strong>Industry convention</strong>: Docker, Flatpak, Deno, and macOS App Sandbox all require explicit path configuration</li>
+<li><strong>Clarity</strong>: Users should know exactly what their sandbox allows — no hidden behavior</li>
+</ol>
+<h3 id="sandbox-is-opt-in">Sandbox is opt-in</h3>
+<p>Sandboxing defaults to disabled (<code>enabled: false</code>) in YAML configuration. Users must explicitly enable it per server. The TUI defaults new servers to sandbox-enabled when a backend is available, since the TUI is an interactive setup where the secure default is appropriate.</p>
+<p><strong>Why not opt-out (enabled by default)?</strong> Sandboxing can break servers that write to unexpected locations. An opt-in approach lets users enable it deliberately and debug any issues, rather than discovering their server is broken and having to figure out why. As the feature matures and we gain confidence in the defaults, we may revisit this.</p>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li>Fail-closed ensures sandbox promises are kept — no silent degradation</li>
+<li>Home-directory-denied default provides strong isolation — servers can only access what they're explicitly given</li>
+<li>Explicit paths configuration is clear and predictable — no hidden inference</li>
+<li>Network-allowed-by-default means API-dependent servers work out of the box</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li>Servers that need filesystem access must have <code>paths</code> explicitly configured</li>
+<li>Network-allowed-by-default means a compromised server can exfiltrate data unless the user explicitly sets <code>network: false</code></li>
+<li>Opt-in means users must know about and enable the feature</li>
+<li>On macOS, Seatbelt's allow-wins semantics prevent carving out exceptions within allowed parent paths</li>
+</ul>
+<h3 id="future-considerations">Future considerations</h3>
+<ul>
+<li>Default-on sandboxing once the feature is proven stable</li>
+<li>Granular network control (allow specific hosts/ports) if bubblewrap adds support or we add a Landlock fallback</li>
+<li>Resource limits (CPU/memory) via cgroups — requires a separate mechanism</li>
+</ul>
+<h2 id="status">Status</h2>
+<p>Accepted</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

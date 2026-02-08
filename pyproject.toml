@@ -124,6 +124,8 @@ markers = [
     "smoke: marks CLI smoke tests that boot the gateway subprocess (implies slow)",
     "windows_only: marks tests that only run on Windows (auto-filtered on other platforms)",
     "posix_only: marks tests that only run on POSIX systems (auto-filtered on Windows)",
+    "darwin_only: marks tests that only run on macOS (auto-filtered on other platforms)",
+    "linux_only: marks tests that only run on Linux (auto-filtered on other platforms)",
 ]
 testpaths = [
     "tests",

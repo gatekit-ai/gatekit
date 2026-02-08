@@ -1,7 +1,7 @@
 # Gatekit
 
 [![Open Source](https://img.shields.io/badge/Open%20Source-Apache%202.0-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/gatekit-ai/gatekit/releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/gatekit-ai/gatekit/releases)
 [![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://python.org)
 [![Docs](https://img.shields.io/badge/docs-gatekit.ai-blue.svg)](https://gatekit.ai)
 
@@ -19,6 +19,7 @@ Built-in plugins handle:
 - **Content security** — catch PII and secrets before they leave your machine, defend against basic prompt injection attacks (regex-based)
 - **Audit logging** — debug failures, track usage, inspect full request and response bodies
 - **Token usage tracking** — estimate token consumption per server and tool, with CSV export
+- **Stdio server sandboxing** — restrict what local MCP servers can access on your machine using OS-native isolation (macOS Seatbelt, Linux bubblewrap)
 
 <img src="https://raw.githubusercontent.com/gatekit-ai/gatekit/main/docs/images/gatekit-config-editor.png" width="800" alt="Gatekit configuration editor">
 
@@ -39,7 +40,7 @@ pipx install gatekit
 pip install gatekit
 ```
 
-Requires Python 3.10+.
+Requires Python 3.10+. Works on macOS, Linux, and Windows.
 
 ### Usage
 
@@ -195,4 +196,4 @@ Apache License 2.0 - see [LICENSE](LICENSE)
 
 ---
 
-**Gatekit v0.2.0** - A hackable MCP gateway
+**Gatekit v0.3.0** - A hackable MCP gateway

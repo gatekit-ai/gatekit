@@ -1,6 +1,6 @@
 # Gatekit Configuration Specification
 
-**Version**: 0.2.0
+**Version**: 0.3.0
 **Status**: Authoritative Reference  
 
 > **Note**: This document describes the ACTUAL configuration format as implemented. The Pydantic schemas in [`gatekit/config/models.py`](../gatekit/config/models.py) define the validation rules and accepted fields.
@@ -132,6 +132,7 @@ Each upstream server has these fields:
 | `server_identity` | string | No | `null` | MCP-reported server name |
 | `enabled` | boolean | No | `true` | Enable/disable this server |
 | `tls_verify` | boolean | No | `true` | TLS verification (http only) |
+| `sandbox` | object | No | - | OS-native process sandboxing (stdio only) |
 
 **Command Format:**
 
@@ -193,6 +194,58 @@ HTTP transport uses MCP's session management protocol:
 - **Session ID**: Automatically extracted from server response headers and included in subsequent requests
 - **Session expiry**: If a session expires (server returns 404), Gatekit handles it transparently
 - **Session termination**: On disconnect, Gatekit sends a DELETE request to terminate the session cleanly
+
+#### Process Sandboxing (stdio only)
+
+Gatekit can sandbox stdio-transport MCP server processes using OS-native mechanisms. When enabled, the server runs with restricted filesystem and (optionally) network access.
+
+**Sandbox Configuration Fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable OS-native sandboxing |
+| `paths` | list of strings | (empty) | Read-write paths for the server |
+| `network` | boolean | `true` | Allow outbound network access |
+
+**Platform Support:**
+
+| Platform | Engine | Install |
+|----------|--------|---------|
+| macOS | `sandbox-exec` (Seatbelt) | Built-in |
+| Linux | `bubblewrap` (bwrap) | `apt install bubblewrap` / `dnf install bubblewrap` |
+| Windows | Not supported | - |
+
+**Default Behavior (when sandbox is enabled):**
+
+- **Home directory denied**: On macOS, the entire home directory is denied by default then specific subdirectories are allowed. On Linux, only explicitly mounted paths are visible.
+- **System paths readable**: `/usr`, `/bin`, `/sbin`, `/lib`, `/etc`, `/opt`, and platform-specific system directories are readable (so binaries, libraries, and dependencies work)
+- **Temp directories writable**: `/tmp` and platform-specific temp directories. On Linux, `/tmp` is a fresh tmpfs (not the host `/tmp`).
+- **Cache directories writable**: `~/.npm/`, `~/.cache/`, `~/.local/` (if they exist; needed by package managers like npx, pip, uv)
+- **User-configured paths writable**: Directories listed in `paths` get read-write access
+- **Sensitive paths hidden**: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker`, `~/.git-credentials`, `~/.vault-token`, `~/.terraform.d`. On macOS (Seatbelt), if a user allows a parent path (e.g., `paths: ["~"]`), sensitive subdirectories become accessible due to Seatbelt's allow-wins semantics — a warning is logged.
+- **Network**: Allowed by default (most MCP servers need API access)
+
+**Sandbox Examples:**
+
+```yaml
+# Minimal - just enable it
+upstreams:
+  - name: web-search
+    command: ["npx", "@modelcontextprotocol/server-web-search"]
+    sandbox:
+      enabled: true
+
+# Filesystem server - grant access to specific directories
+upstreams:
+  - name: filesystem
+    command: ["npx", "@modelcontextprotocol/server-filesystem", "~/docs"]
+    sandbox:
+      enabled: true
+      paths: ["~/docs"]
+      network: false
+```
+
+**Failure Mode:** If sandbox is enabled but no engine is available (e.g., bwrap not installed on Linux, or running on Windows), the server **refuses to start** with a clear error message.
 
 #### Important: Environment Variables
 
@@ -559,7 +612,8 @@ plugins:
 
 ## Version History
 
-- **0.2.0**: Current specification — added `enabled` field for upstreams, HTTP transport, token usage plugin
+- **0.3.0**: Current specification — added process sandboxing for stdio upstreams
+- **0.2.0**: Added `enabled` field for upstreams, HTTP transport, token usage plugin
 - **0.1.0**: Initial release with handler-based plugin system
 
 ---

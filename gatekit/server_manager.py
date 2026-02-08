@@ -155,12 +155,14 @@ class ServerManager:
             return StdioTransport(
                 command=config.command,
                 request_timeout=self._request_timeout,
+                sandbox_config=config.sandbox,
             )
         else:
             raise NotImplementedError(f"Transport {config.transport} not implemented")
 
     async def _connect_server(self, conn: ServerConnection) -> bool:
         """Connect to a single server. Returns True if successful."""
+        transport = None
         try:
             server_desc = self.get_server_description(conn.name)
             logger.info(f"Connecting to {server_desc}")
@@ -221,6 +223,14 @@ class ServerManager:
             conn.status = "disconnected"
             conn.error = str(e)
             logger.exception(f"Failed to connect to {server_desc}: {e}")
+            # Clean up the transport if it was connected (e.g. initialize
+            # handshake failed after transport.connect() succeeded).  This
+            # terminates the subprocess and removes sandbox temp files.
+            if transport is not None and transport.is_connected():
+                try:
+                    await transport.disconnect()
+                except Exception:  # noqa: S110
+                    pass
             return False
 
     async def reconnect_server(self, server_name: Optional[str]) -> bool:
@@ -408,4 +418,5 @@ class ServerManager:
             or old.command != new.command
             or old.url != new.url
             or old.tls_verify != new.tls_verify
+            or old.sandbox != new.sandbox
         )

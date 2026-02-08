@@ -114,8 +114,18 @@ class ASCIICheckbox(ToggleButton):
         return self._button
 
     def watch_value(self, value: bool) -> None:
-        """Watch for value changes and log them for debugging."""
-        # Get the old value before calling super
+        """Watch for value changes and log them for debugging.
+
+        We intentionally do NOT call super().watch_value() here because:
+        1. It sets the ``-on`` CSS class, which activates ``$success`` (green)
+           coloring that clashes with our ASCII checkbox styling.
+        2. ASCIICheckbox handles its own rendering via the ``_button`` property
+           override and ``render()`` — the CSS class toggle is unnecessary.
+        3. Event routing uses direct method calls (not the ``Changed`` message)
+           because ``@on(ASCIICheckbox.Changed, ...)`` selectors don't work
+           (the ``Changed`` message lacks a ``control`` attribute for matching).
+        """
+        # Get the old value before updating
         old_value = getattr(self, "_previous_value", False)
         self._previous_value = value
 
@@ -181,6 +191,20 @@ class ASCIICheckbox(ToggleButton):
             except Exception:
                 # Ignore any errors to prevent disrupting the TUI
                 pass
+
+        # Handle sandbox enable/disable checkbox by calling screen method directly
+        if old_value != value and hasattr(self, "id") and self.id:
+            if self.id == "sandbox_enabled_checkbox":
+                try:
+                    _ = self.screen  # raises if not yet mounted
+                except Exception:
+                    return
+                try:
+                    screen = self.app.screen
+                    if hasattr(screen, "_handle_sandbox_checkbox_toggle"):
+                        screen._handle_sandbox_checkbox_toggle(value)
+                except Exception:
+                    pass
 
         # Handle server enable/disable checkboxes by posting directly to screen
         # (message bubbling doesn't work reliably for Container widgets)

@@ -24,6 +24,7 @@ async def handshake_upstream(
     url: Optional[str] = None,
     tls_verify: bool = True,
     timeout: float = 30.0,
+    sandbox_config: Optional[Any] = None,
 ) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Perform a lightweight MCP handshake and fetch tool metadata.
 
@@ -35,6 +36,7 @@ async def handshake_upstream(
         url: URL of the MCP server endpoint (for HTTP transport)
         tls_verify: Whether to verify TLS certificates (default True)
         timeout: Timeout in seconds for both handshake and tools fetch (default: 30.0)
+        sandbox_config: Optional SandboxConfig for OS-native process isolation (stdio only)
 
     Returns:
         Tuple of (server_identity, tools_payload) where:
@@ -82,7 +84,7 @@ async def handshake_upstream(
             tls_verify=tls_verify,
         )
     else:
-        transport = StdioTransport(command=command)
+        transport = StdioTransport(command=command, sandbox_config=sandbox_config)
 
     stderr_output: list[str] = []
 

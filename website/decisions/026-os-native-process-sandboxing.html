@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-026: OS-Native Process Sandboxing Architecture - Gatekit Documentation</title>
+  <meta name="description" content="MCP servers run as local processes with full user privileges — installing one is equivalent to running arbitrary code. The MCP spec recommends running server...">
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <script defer src="https://api.pirsch.io/pa.js" id="pianjs" data-code="GUYxLQ7LGQThWCqSrzrtg2qOOArCNKPS"></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="../" class="logo">Gate<span class="logo-kit">kit</span></a>
+      <nav class="header-nav">
+        <a href="../docs/getting-started.html">Get started</a>
+        <a href="../docs/">Docs</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar">
+      <nav class="docs-nav">
+<div class="nav-section">
+<h3>Getting Started</h3>
+<ul>
+<li><a href="/docs/getting-started.html">Quick Start</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Guides</h3>
+<ul>
+<li><a href="/docs/guides/managing-tools.html">Managing Tools</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Concepts</h3>
+<ul>
+<li><a href="/docs/concepts/configuration.html">Configuration</a></li>
+<li><a href="/docs/concepts/routing.html">Routing Model</a></li>
+<li><a href="/docs/concepts/security.html">Security Model</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Plugin Development</h3>
+<ul>
+<li><a href="/docs/plugins/development-guide.html">Plugin Guide</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Reference</h3>
+<ul>
+<li><a href="/docs/reference/plugins/">Built-in Plugins</a></li>
+<li><a href="/docs/reference/known-issues.html">Known Issues</a></li>
+</ul>
+</div>
+<div class="nav-section">
+<h3>Decisions</h3>
+<ul>
+<li><a href="/decisions/">Architecture Decision Records</a></li>
+</ul>
+</div>
+</nav>
+    </aside>
+    <main class="docs-content">
+      <h1 id="adr-026-os-native-process-sandboxing-architecture">ADR-026: OS-Native Process Sandboxing Architecture</h1>
+<h2 id="context">Context</h2>
+<p>MCP servers run as local processes with full user privileges — installing one is equivalent to running arbitrary code. The MCP spec recommends running servers in sandboxed environments but doesn't mandate any mechanism. Real-world MCP security incidents in 2025 (10+ CVEs including RCEs and sandbox escapes) make process isolation a pressing concern.</p>
+<p>Gatekit is uniquely positioned to add sandboxing: as the gateway that spawns MCP server processes, it can transparently wrap commands with OS-native sandboxing before process creation.</p>
+<h3 id="requirements">Requirements</h3>
+<ol>
+<li>Simple per-server toggle that &quot;just works&quot; with sensible defaults</li>
+<li>Advanced users can customize filesystem and network policy via YAML</li>
+<li>No Docker dependency — must work on a bare development machine</li>
+<li>Fail-closed: if sandbox is enabled but unavailable, refuse to start the server</li>
+<li>Must not break process lifecycle management (killpg, graceful shutdown)</li>
+</ol>
+<h2 id="decision">Decision</h2>
+<h3 id="os-native-sandboxing-not-containers">OS-native sandboxing, not containers</h3>
+<p>We chose OS-native sandboxing mechanisms over Docker/Podman because:</p>
+<ul>
+<li><strong>Zero infrastructure</strong>: No daemon, no images, no registry — just the OS</li>
+<li><strong>Transparent stdio</strong>: Sandboxed process communicates via stdin/stdout exactly as before</li>
+<li><strong>Process group preservation</strong>: <code>sandbox-exec</code> and <code>bwrap</code> exec the target command, preserving process group semantics for <code>killpg()</code></li>
+<li><strong>Minimal overhead</strong>: No container startup time or resource allocation</li>
+</ul>
+<h3 id="engine-selection">Engine selection</h3>
+<p><strong>macOS: Seatbelt (<code>sandbox-exec</code>)</strong></p>
+<ul>
+<li>Only practical option on macOS</li>
+<li>Technically deprecated since ~2016 but still functional and used by Apple's own services, Claude Code, OpenAI Codex, Chromium, Firefox, and Nix</li>
+<li>Generates <code>.sb</code> profile files consumed by <code>sandbox-exec -f</code></li>
+</ul>
+<p><strong>Linux: bubblewrap (<code>bwrap</code>)</strong></p>
+<ul>
+<li>Uses unprivileged user namespaces — no root needed, no SUID binary</li>
+<li>A vulnerability in bwrap itself cannot escalate to root (unlike Firejail's SUID approach)</li>
+<li>Battle-tested: used by Flatpak, Claude Code</li>
+<li>Tradeoff: cannot do cgroups, granular network control, or overlayfs — none critical for MCP sandboxing</li>
+</ul>
+<p><strong>Alternatives evaluated and rejected:</strong></p>
+<ul>
+<li><strong>Firejail</strong>: SUID root — multiple privilege escalation CVEs (2021, 2022)</li>
+<li><strong>nsjail</strong>: Usually requires root, not packaged in distros</li>
+<li><strong>systemd-run</strong>: Child managed by systemd (complicates lifecycle), many options need root</li>
+<li><strong>Landlock/landrun</strong>: Promising future fallback (kernel-native, zero deps) but less mature</li>
+<li><strong>Podman/Docker</strong>: Full container runtime — too heavyweight for sandboxing a single child</li>
+</ul>
+<h3 id="core-infrastructure-not-a-plugin">Core infrastructure, not a plugin</h3>
+<p>Sandboxing operates at the process level, before any MCP messages flow. It wraps the command passed to <code>asyncio.create_subprocess_exec()</code>. This is fundamentally different from plugins which operate on messages. Making it a plugin would require the plugin to have control over process creation, which violates the transport abstraction.</p>
+<h3 id="stdio-transport-only">Stdio transport only</h3>
+<p>HTTP transport servers are remote — Gatekit doesn't control their process. Sandboxing only makes sense for locally-spawned stdio processes.</p>
+<h3 id="default-security-policy">Default security policy</h3>
+<ul>
+<li><strong>Deny-all default with allowlist</strong>: The server process has no filesystem access except explicitly allowed paths. System paths are readable (binaries, libraries, runtimes), <code>/tmp</code> and cache directories are writable, and user-configured <code>paths</code> get read-write access.</li>
+<li><strong>Hide sensitive paths</strong>: <code>~/.ssh</code>, <code>~/.gnupg</code>, <code>~/.aws</code>, <code>~/.azure</code>, <code>~/.config/gcloud</code>, <code>~/.kube</code>, <code>~/.docker</code>, <code>~/.git-credentials</code>, <code>~/.vault-token</code>, <code>~/.terraform.d</code> — protected by not being in the allowlist (home directory is denied by default)</li>
+<li><strong>Allow network by default</strong>: Most MCP servers need API access (e.g., Context7, web search)</li>
+<li><strong>Explicit paths only</strong>: No workspace inference from command arguments — users must configure <code>paths</code> for directories the server needs to access</li>
+</ul>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li>Users can sandbox untrusted MCP servers with a single config line</li>
+<li>Deny-all default provides strong isolation without per-server configuration</li>
+<li>Fail-closed design prevents accidental unsandboxed execution</li>
+<li>No external dependencies on macOS; single package install on Linux</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li><code>sandbox-exec</code> is deprecated (though still widely used and functional)</li>
+<li>Windows has no supported engine</li>
+<li>Servers that need filesystem access must have <code>paths</code> explicitly configured</li>
+<li>No resource limits (CPU/memory) — requires separate OS-level controls</li>
+<li>On macOS, Seatbelt's allow-wins semantics prevent carving out exceptions within allowed paths</li>
+</ul>
+<h3 id="risks">Risks</h3>
+<ul>
+<li>Apple could remove <code>sandbox-exec</code> in a future macOS release</li>
+<li>Ubuntu AppArmor restrictions on unprivileged user namespaces may require extra configuration</li>
+<li>Process group management under <code>--unshare-pid</code> needs careful testing</li>
+</ul>
+<h2 id="status">Status</h2>
+<p>Accepted</p>
+
+    </main>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="../docs/">Documentation</a>
+        <a href="https://github.com/gatekit-ai/gatekit">GitHub</a>
+        <a href="https://github.com/gatekit-ai/gatekit/issues">Issues</a>
+        <a href="https://pypi.org/project/gatekit/">PyPI</a>
+      </div>
+      <p>Apache 2.0 License</p>
+    </div>
+  </footer>
+</body>
+</html>

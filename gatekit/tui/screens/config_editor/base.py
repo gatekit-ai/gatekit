@@ -145,9 +145,39 @@ class ConfigEditorScreen(
     margin-bottom: 1;  /* visual gap below panel */
     }
 
-    /* Make info labels fill the available width so ellipsis can apply */
+    /* Make info labels fill the available width so ellipsis can apply.
+       Exclude ASCIICheckbox (which inherits Static via ToggleButton) so it
+       keeps its width: auto and doesn't push sibling buttons off-screen. */
     .server-info Label, .server-info Static {
         width: 100%;
+    }
+    .server-info ASCIICheckbox {
+        width: auto;
+    }
+
+    /* Style sandbox Configure button to match plugin Configure buttons */
+    #sandbox_configure_button {
+        background: $secondary;
+        color: $text;
+        text-style: none;
+        height: 1;
+        min-width: 13;
+        margin: 0 1;
+        border: none;
+    }
+    #sandbox_configure_button:hover {
+        background: $secondary;
+        color: $text;
+        border: none;
+    }
+    #sandbox_configure_button:focus {
+        background: $accent !important;
+        color: $background !important;
+        background-tint: initial !important;
+        border: none !important;
+        border-top: none !important;
+        border-bottom: none !important;
+        text-style: none !important;
     }
 
     /* Server label in horizontal layout with input */
@@ -234,13 +264,23 @@ class ConfigEditorScreen(
         background: $primary;
         color: $text;
         content-align: center middle;
-        text-style: bold;
+        text-style: none;
     }
 
-    .pane-header-button:hover,
-    .pane-header-button:focus {
+    .pane-header-button:hover {
         background: $primary;
         color: $background;
+        border: none;
+    }
+
+    .pane-header-button:focus {
+        background: $accent !important;
+        color: $background !important;
+        background-tint: initial !important;
+        border: none !important;
+        border-top: none !important;
+        border-bottom: none !important;
+        text-style: none !important;
     }
 
     .other-pane-title {
@@ -899,6 +939,7 @@ class ConfigEditorScreen(
             identity, tools_payload = await handshake_upstream(
                 command=upstream.command,
                 timeout=30.0,
+                sandbox_config=getattr(upstream, "sandbox", None),
             )
         else:
             # Unknown transport
@@ -1525,4 +1566,121 @@ class ConfigEditorScreen(
     async def _on_server_command_blurred_shim(self, event: Input.Blurred) -> None:
         """Shim handler for server command input - forwards to mixin implementation."""
         await self.on_server_command_blurred(event)
+
+    # Sandbox configuration handlers
+    async def _handle_sandbox_configure(self) -> None:
+        """Open sandbox configuration modal (AsyncCallbackButton callback)."""
+        from ...debug import get_debug_logger
+
+        _logger = get_debug_logger()
+
+        if not self.selected_server:
+            return
+
+        upstream = next(
+            (u for u in self.config.upstreams if u.name == self.selected_server), None
+        )
+        if not upstream:
+            return
+
+        if _logger:
+            _logger.log_event(
+                "SANDBOX_CONFIGURE_OPEN",
+                screen=self,
+                context={
+                    "server": self.selected_server,
+                    "upstream_id": id(upstream),
+                    "sandbox_before": repr(upstream.sandbox),
+                    "sandbox_paths_before": upstream.sandbox.paths if upstream.sandbox else None,
+                },
+            )
+
+        from gatekit.tui.screens.sandbox_config_modal import SandboxConfigModal
+
+        modal = SandboxConfigModal(upstream.sandbox)
+        result = await self.app.push_screen_wait(modal)
+
+        if _logger:
+            _logger.log_event(
+                "SANDBOX_CONFIGURE_RESULT",
+                screen=self,
+                context={
+                    "server": self.selected_server,
+                    "result": repr(result),
+                    "result_paths": result.paths if result else None,
+                    "dismissed": result is None,
+                },
+            )
+
+        if result is not None:
+            upstream.sandbox = result
+            self._mark_dirty()
+
+            if _logger:
+                # Re-read to confirm
+                upstream2 = next(
+                    (u for u in self.config.upstreams if u.name == self.selected_server), None
+                )
+                _logger.log_event(
+                    "SANDBOX_CONFIGURE_AFTER_SET",
+                    screen=self,
+                    context={
+                        "server": self.selected_server,
+                        "upstream_id": id(upstream2),
+                        "same_object": upstream is upstream2,
+                        "sandbox_after": repr(upstream2.sandbox) if upstream2 else None,
+                        "sandbox_paths_after": upstream2.sandbox.paths if upstream2 and upstream2.sandbox else None,
+                    },
+                )
+
+    def _handle_sandbox_checkbox_toggle(self, enabled: bool) -> None:
+        """Handle sandbox enabled checkbox toggle (called from watch_value)."""
+        from ...debug import get_debug_logger
+
+        _logger = get_debug_logger()
+
+        if not self.selected_server:
+            return
+
+        upstream = next(
+            (u for u in self.config.upstreams if u.name == self.selected_server), None
+        )
+        if not upstream:
+            return
+
+        if _logger:
+            _logger.log_event(
+                "SANDBOX_CHECKBOX_TOGGLE",
+                screen=self,
+                context={
+                    "server": self.selected_server,
+                    "enabled": enabled,
+                    "sandbox_before": repr(upstream.sandbox),
+                    "sandbox_paths_before": upstream.sandbox.paths if upstream.sandbox else None,
+                },
+            )
+
+        from gatekit.config.models import SandboxConfig
+
+        if enabled:
+            if upstream.sandbox is None:
+                upstream.sandbox = SandboxConfig(enabled=True)
+            else:
+                upstream.sandbox.enabled = True
+        else:
+            if upstream.sandbox is not None:
+                upstream.sandbox.enabled = False
+
+        if _logger:
+            _logger.log_event(
+                "SANDBOX_CHECKBOX_TOGGLE_AFTER",
+                screen=self,
+                context={
+                    "server": self.selected_server,
+                    "sandbox_after": repr(upstream.sandbox),
+                    "sandbox_paths_after": upstream.sandbox.paths if upstream.sandbox else None,
+                },
+            )
+
+        self._mark_dirty()
 

@@ -2,7 +2,28 @@
 
 ## [Unreleased]
 
-## [0.2.0] - TBD
+## [0.3.0] - 2026-02-08
+
+### Breaking Changes
+
+- **Plugin API**: Removed deprecated `get_json_schema()` shim (use `get_config_schema()` instead, as announced in v0.2.0)
+
+### Features
+
+- **Process sandboxing**: OS-native process isolation for stdio-transport MCP servers
+  - macOS: Seatbelt (`sandbox-exec`) with home-directory-denied default and selective allows
+  - Linux: bubblewrap (`bwrap`) with selective mount namespaces
+  - Home directory denied by default; system paths, `/tmp`, and cache directories accessible
+  - Sensitive credential directories always hidden (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.docker`, `~/.git-credentials`, `~/.vault-token`, `~/.terraform.d`)
+  - Configurable read-write paths for workspace directories
+  - Network access toggle (allowed by default, disable with `network: false`)
+  - Fail-closed: refuses to start server if sandbox engine is unavailable
+  - Auto-detection of command runtime paths (venvs, scripts) for transparent startup
+  - Glob pattern validation prevents misconfigured paths
+  - TUI sandbox configuration modal with per-server settings
+  - Not available on Windows (no native sandbox engine)
+
+## [0.2.0] - 2026-02-02
 
 ### Breaking Changes
 

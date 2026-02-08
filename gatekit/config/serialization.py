@@ -77,6 +77,15 @@ def config_to_dict(
                 if upstream.tls_verify is not True:  # Only if non-default
                     upstream_dict["tls_verify"] = upstream.tls_verify
 
+            # Sandbox configuration (only include when enabled)
+            if upstream.sandbox and upstream.sandbox.enabled:
+                sandbox_dict: dict = {"enabled": True}
+                if upstream.sandbox.paths:
+                    sandbox_dict["paths"] = upstream.sandbox.paths
+                if not upstream.sandbox.network:  # Only include when non-default (False)
+                    sandbox_dict["network"] = False
+                upstream_dict["sandbox"] = sandbox_dict
+
             result["proxy"]["upstreams"].append(upstream_dict)
 
     # Add timeouts if non-default

@@ -1,13 +1,15 @@
 """Configuration models for Gatekit MCP Gateway."""
 
+import logging
 import re
 import importlib.util
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Union, Literal
 from pathlib import Path
 from pydantic import BaseModel, Field, HttpUrl, model_validator, field_validator
-
 from gatekit.utils.paths import resolve_config_path
+
+_logger = logging.getLogger(__name__)
 
 
 # Pydantic schemas for YAML validation (ADR-005)
@@ -295,6 +297,45 @@ class PluginsConfig:
         }
 
 
+_SANDBOX_GLOB_CHARS = set("*?[]{}")
+
+
+class SandboxConfigSchema(BaseModel):
+    """Schema for validating per-server sandbox configuration.
+
+    Controls OS-native process sandboxing for stdio-transport servers.
+
+    Security model: deny-all default with explicit allowlist.
+    - Everything outside system paths is denied by default
+    - ``paths`` grants read+write access to specific directories
+    - Sensitive credential directories are always denied
+    """
+
+    model_config = {"extra": "forbid"}
+
+    enabled: bool = False
+    paths: Optional[List[str]] = None  # Read-write paths the server needs
+    network: bool = True  # Allow outbound network (most MCP servers need API access)
+
+    @field_validator("paths", mode="after")
+    @classmethod
+    def reject_glob_patterns(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        """Reject paths containing glob characters."""
+        if v is None:
+            return v
+        for p in v:
+            bad = _SANDBOX_GLOB_CHARS.intersection(p)
+            if bad:
+                raise ValueError(
+                    f"sandbox path {p!r} contains glob characters "
+                    f"({', '.join(sorted(bad))}). "
+                    f"Glob patterns are not supported — each path must be an "
+                    f"exact directory. A directory path covers everything "
+                    f"recursively inside it."
+                )
+        return v
+
+
 class UpstreamConfigSchema(BaseModel):
     """Schema for validating upstream MCP server configuration."""
 
@@ -309,6 +350,9 @@ class UpstreamConfigSchema(BaseModel):
 
     # TLS configuration for HTTP transport
     tls_verify: bool = True  # True (verify with system CA) or False (insecure)
+
+    # OS-native process sandboxing (stdio transport only)
+    sandbox: Optional[SandboxConfigSchema] = None
 
     @model_validator(mode="after")
     def validate_and_normalize_command(self) -> "UpstreamConfigSchema":
@@ -328,12 +372,73 @@ class UpstreamConfigSchema(BaseModel):
             if not self.command:
                 raise ValueError("'command' cannot be an empty list")
 
+        # Warn if sandbox is configured on a non-stdio transport (no-op)
+        if self.sandbox is not None and self.sandbox.enabled and self.transport != "stdio":
+            import warnings
+
+            warnings.warn(
+                f"Sandbox is enabled on upstream '{self.name}' but only applies to "
+                f"stdio transport (current transport: {self.transport}). "
+                f"The sandbox configuration will be ignored.",
+                UserWarning,
+                stacklevel=2,
+            )
+
         # Normalize server identity (strip whitespace, drop empty strings)
         if self.server_identity is not None:
             normalized_identity = self.server_identity.strip()
             self.server_identity = normalized_identity or None
 
         return self
+
+
+@dataclass
+class SandboxConfig:
+    """Internal representation of per-server sandbox configuration.
+
+    Security model: deny-all default with explicit allowlist.
+
+    Attributes:
+        enabled: Whether sandboxing is active for this server.
+        paths: Read-write paths the server needs access to.
+        network: Whether outbound network access is allowed.
+    """
+
+    enabled: bool = False
+    paths: List[str] = field(default_factory=list)
+    network: bool = True
+
+    @classmethod
+    def from_schema(
+        cls,
+        schema: Optional[SandboxConfigSchema],
+        config_directory: Optional[Path] = None,
+    ) -> Optional["SandboxConfig"]:
+        """Create from validated Pydantic schema.  Returns None when schema is None.
+
+        Args:
+            schema: Validated sandbox configuration schema
+            config_directory: Directory containing the configuration file (for
+                resolving relative paths).  If None, relative paths are resolved
+                against the current working directory.
+        """
+        if schema is None:
+            return None
+        # Resolve paths relative to config directory (matching other config paths)
+        resolved_paths: List[str] = []
+        if schema.paths:
+            if config_directory is not None:
+                for p in schema.paths:
+                    resolved_paths.append(
+                        str(resolve_config_path(p, config_directory))
+                    )
+            else:
+                resolved_paths = list(schema.paths)
+        return cls(
+            enabled=schema.enabled,
+            paths=resolved_paths,
+            network=schema.network,
+        )
 
 
 @dataclass
@@ -348,6 +453,7 @@ class UpstreamConfig:
         restart_on_failure: Whether to restart the server if it fails
         max_restart_attempts: Maximum number of restart attempts
         tls_verify: TLS verification (True for system CA, False to disable)
+        sandbox: Optional sandbox configuration (stdio transport only)
     """
 
     name: str
@@ -360,6 +466,7 @@ class UpstreamConfig:
     is_draft: bool = False
     server_identity: Optional[str] = None  # Last-known MCP handshake name
     tls_verify: bool = True  # True (verify with system CA) or False (insecure)
+    sandbox: Optional[SandboxConfig] = None
 
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -375,7 +482,11 @@ class UpstreamConfig:
             self.server_identity = self.server_identity.strip() or None
 
     @classmethod
-    def from_schema(cls, schema: UpstreamConfigSchema) -> "UpstreamConfig":
+    def from_schema(
+        cls,
+        schema: UpstreamConfigSchema,
+        config_directory: Optional[Path] = None,
+    ) -> "UpstreamConfig":
         """Create from validated Pydantic schema."""
         return cls(
             name=schema.name,
@@ -388,6 +499,7 @@ class UpstreamConfig:
             is_draft=False,
             server_identity=schema.server_identity,
             tls_verify=schema.tls_verify,
+            sandbox=SandboxConfig.from_schema(schema.sandbox, config_directory),
         )
 
     @classmethod
@@ -401,6 +513,7 @@ class UpstreamConfig:
         max_restart_attempts: int = 3,
         server_identity: Optional[str] = None,
         tls_verify: bool = True,
+        sandbox: Optional[SandboxConfig] = None,
     ) -> "UpstreamConfig":
         """Construct a draft upstream that can be completed by the editor before validation.
 
@@ -421,6 +534,7 @@ class UpstreamConfig:
             is_draft=True,
             server_identity=normalized_identity,
             tls_verify=tls_verify,
+            sandbox=sandbox,
         )
 
 
@@ -685,7 +799,10 @@ class ProxyConfig:
     ) -> "ProxyConfig":
         """Create from validated Pydantic schema."""
         # Convert upstreams
-        upstreams = [UpstreamConfig.from_schema(u) for u in schema.upstreams or []]
+        upstreams = [
+            UpstreamConfig.from_schema(u, config_directory)
+            for u in schema.upstreams or []
+        ]
 
         # Create timeouts config
         timeouts = TimeoutConfig()

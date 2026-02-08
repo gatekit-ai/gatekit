@@ -155,19 +155,6 @@ class PluginInterface(ABC):  # noqa: B024
         return []
 
     @classmethod
-    def get_json_schema(cls) -> Dict[str, Any]:
-        """DEPRECATED: Use get_config_schema() instead. Will be removed in 0.2.0."""
-        import warnings
-
-        warnings.warn(
-            "get_json_schema() is deprecated, use get_config_schema() instead. "
-            "Will be removed in 0.2.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return cls.get_config_schema()
-
-    @classmethod
     def get_output_schema(cls) -> Optional[Dict[str, Any]]:
         """Return output display schema for this plugin.
 

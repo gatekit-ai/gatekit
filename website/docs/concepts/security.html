@@ -108,7 +108,7 @@
 </blockquote>
 <h3 id="what-gatekit-does-not-protect-against">What Gatekit Does NOT Protect Against</h3>
 <ul>
-<li><p><strong>Upstream server process behavior</strong>: Gatekit filters MCP traffic but does not sandbox server processes. A malicious or compromised server can still access the filesystem, make network calls, or perform other actions outside the MCP protocol. Gatekit only sees what flows through the MCP channel.</p>
+<li><p><strong>Upstream server process behavior</strong>: Gatekit filters MCP traffic at the protocol level. For stdio-transport servers, optional OS-native sandboxing (see <a href="#process-sandboxing">Process Sandboxing</a>) restricts filesystem and network access. Without sandboxing enabled, a malicious or compromised server can still access the filesystem, make network calls, or perform other actions outside the MCP protocol.</p>
 </li>
 <li><p><strong>Attackers with host filesystem access</strong>: Configuration files, audit logs, and server processes reside on the host filesystem. Gatekit assumes the host is protected by appropriate OS-level access controls.</p>
 </li>
@@ -137,8 +137,8 @@
 </tr>
 <tr>
   <td>Upstream Server Processes</td>
-  <td><strong>Trusted</strong></td>
-  <td>Not sandboxed; can access filesystem, network, etc.</td>
+  <td><strong>Optionally Sandboxed</strong></td>
+  <td>OS-native sandboxing available for stdio transport (opt-in via <code>sandbox.enabled</code>)</td>
 </tr>
 <tr>
   <td>Host Filesystem</td>
@@ -156,6 +156,39 @@
 <li><p><strong>File permissions</strong>: Protect audit log files with restrictive permissions (mode <code>0600</code> or <code>0700</code>). Logs contain metadata about tool usage patterns that may be sensitive even without redacted content.</p>
 </li>
 </ul>
+<h3 id="process-sandboxing">Process Sandboxing</h3>
+<p>Gatekit can optionally sandbox stdio-transport MCP server processes using OS-native isolation mechanisms. This is orthogonal to the plugin pipeline — sandboxing restricts what the server process itself can do, while plugins filter what flows through the MCP protocol.</p>
+<p><strong>How it works:</strong></p>
+<ul>
+<li>On macOS, Gatekit generates a Seatbelt profile and wraps the server command with <code>sandbox-exec</code></li>
+<li>On Linux, Gatekit wraps the server command with <code>bubblewrap</code> (bwrap), using unprivileged user namespaces</li>
+<li>Windows is not supported (no sandbox engine available)</li>
+</ul>
+<p><strong>Default sandbox policy (when <code>sandbox.enabled: true</code>):</strong></p>
+<ul>
+<li>Home directory denied by default; system paths outside home remain readable</li>
+<li>System paths readable: binaries, libraries, runtimes, certificates (platform-specific)</li>
+<li>Write access to <code>/tmp</code> (fresh tmpfs on Linux, allowed on macOS) and package manager caches (<code>~/.npm</code>, <code>~/.cache</code>, <code>~/.local</code> — if they exist)</li>
+<li>User-configured <code>paths</code> directories get read-write access</li>
+<li>Sensitive paths hidden: <code>~/.ssh</code>, <code>~/.gnupg</code>, <code>~/.aws</code>, <code>~/.azure</code>, <code>~/.config/gcloud</code>, <code>~/.kube</code>, <code>~/.docker</code>, <code>~/.git-credentials</code>, <code>~/.vault-token</code>, <code>~/.terraform.d</code>. Note: on macOS, Seatbelt's allow-wins semantics mean that if a parent path containing sensitive directories is explicitly allowed (e.g., <code>paths: [&quot;~&quot;]</code>), the sensitive paths become accessible.</li>
+<li>Outbound network allowed by default (configurable with <code>network: false</code>)</li>
+</ul>
+<p><strong>Security properties:</strong></p>
+<ul>
+<li><strong>Fail-closed</strong>: If sandbox is enabled but no engine is available, the server refuses to start</li>
+<li><strong>No privilege escalation</strong>: bubblewrap uses unprivileged user namespaces (no SUID root)</li>
+<li><strong>Process group preservation</strong>: Sandboxed processes are properly terminated via <code>killpg()</code> on disconnect</li>
+<li><strong>Deny always wins</strong>: Sensitive credential directories are protected even if a parent directory is allowed (on Linux via bubblewrap mount overlays; on macOS this is a known limitation — see below)</li>
+</ul>
+<p><strong>Limitations:</strong></p>
+<ul>
+<li>Sandboxing is opt-in (disabled by default) to avoid breaking existing setups</li>
+<li>Only applies to stdio transport (HTTP servers are remote, not local processes)</li>
+<li>Does not provide resource limits (CPU, memory) — use system-level controls for that</li>
+<li>Servers must have their working directories explicitly listed in <code>paths</code> — no automatic inference from command arguments</li>
+<li>On macOS, Seatbelt's allow-wins semantics mean that if a user sets <code>paths: [&quot;~&quot;]</code>, sensitive subdirectories cannot be individually protected</li>
+</ul>
+<p>See <code>docs/configuration-specification.md</code> for configuration details.</p>
 <h2 id="core-concepts">Core Concepts</h2>
 <h3 id="outcome-enums">Outcome Enums</h3>
 <h4 id="stageoutcome">StageOutcome</h4>

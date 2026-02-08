@@ -521,6 +521,7 @@
           <li><strong>Content security</strong> — catch PII and secrets before they leave your machine, defend against basic prompt injection attacks (regex-based)</li>
           <li><strong>Audit logging</strong> — debug failures, track usage, inspect full request and response bodies</li>
           <li><strong>Token usage tracking</strong> — estimate token consumption per server and tool, with CSV export</li>
+          <li><strong>Stdio server sandboxing</strong> — restrict what local MCP servers can access on your machine using OS-native isolation (macOS Seatbelt, Linux bubblewrap)</li>
         </ul>
         <div class="hero-install">uv tool install gatekit</div>
         <div class="hero-links">
@@ -675,6 +676,27 @@
 
 <section>
   <div class="container">
+    <h2>Stdio Server Sandboxing</h2>
+    <p>Stdio MCP servers run third-party code on your machine. Gatekit can sandbox them so they only access the files and network you allow.</p>
+    <ul>
+      <li><strong>macOS</strong> — Seatbelt (<code>sandbox-exec</code>)</li>
+      <li><strong>Linux</strong> — bubblewrap (<code>bwrap</code>)</li>
+      <li>Home directory denied by default — only explicitly allowed paths are accessible</li>
+      <li>Sensitive directories always hidden (<code>~/.ssh</code>, <code>~/.aws</code>, <code>~/.gnupg</code>, and more)</li>
+      <li>Network access configurable per server</li>
+      <li>Fail-closed — refuses to start if no sandbox engine is available</li>
+    </ul>
+    <pre><code>upstreams:
+  - name: filesystem
+    command: ["npx", "@modelcontextprotocol/server-filesystem", "~/docs"]
+    sandbox:
+      enabled: true
+      paths: ["~/docs"]</code></pre>
+  </div>
+</section>
+
+<section>
+  <div class="container">
     <h2>Custom Plugins</h2>
     <div class="custom-plugins">
       <div class="custom-plugins-text">
@@ -731,7 +753,7 @@ HANDLERS = {"my_plugin": MyPlugin}</code></pre>
 <section>
   <div class="container">
     <h2>Installation</h2>
-    <p>Requires Python 3.10+.</p>
+    <p>Requires Python 3.10+. Works on macOS, Linux, and Windows.</p>
     <div class="install-options">
       <div class="install-option">
         <h3>uv (recommended)</h3>

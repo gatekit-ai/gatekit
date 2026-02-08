@@ -29,8 +29,8 @@ class MessageModal(ModalScreen[None]):
 
     MessageModal > .dialog {
         width: 70;
-        height: auto;
-        max-height: 30;
+        height: 80%;
+        max-height: 80%;
         background: $surface;
         border: heavy $primary;
         padding: 1 2;
@@ -44,9 +44,7 @@ class MessageModal(ModalScreen[None]):
     }
 
     .message-body-scroll {
-        height: auto;
-        max-height: 20;
-        margin-bottom: 2;
+        height: 1fr;
         border: none;
         background: $surface;
     }
@@ -57,8 +55,11 @@ class MessageModal(ModalScreen[None]):
     }
 
     .button-container {
-        align: center middle;
+        dock: bottom;
         height: 3;
+        margin-top: 1;
+        align: center middle;
+        background: $surface;
     }
     """
 

@@ -1035,6 +1035,16 @@ class NavigationMixin:
                     )
                 return
 
+        # Handle sandbox row: checkbox → configure button
+        if isinstance(focused_widget, ASCIICheckbox) and getattr(focused_widget, "id", "") == "sandbox_enabled_checkbox":
+            try:
+                btn = self.query_one("#sandbox_configure_button", Button)
+                if getattr(btn, "can_focus", False) and not getattr(btn, "disabled", False):
+                    btn.focus()
+                    return
+            except Exception:
+                pass
+
         # Handle ASCIICheckbox in server list - right arrow goes to server name
         if self._is_in_servers_list(focused_widget) and isinstance(focused_widget, ASCIICheckbox):
             try:
@@ -1160,6 +1170,16 @@ class NavigationMixin:
             except Exception:
                 pass
             return
+
+        # Handle sandbox configure button: left arrow goes back to checkbox
+        if isinstance(focused_widget, Button) and getattr(focused_widget, "id", "") == "sandbox_configure_button":
+            try:
+                checkbox = self.query_one("#sandbox_enabled_checkbox", ASCIICheckbox)
+                if getattr(checkbox, "can_focus", False) and not getattr(checkbox, "disabled", False):
+                    checkbox.focus()
+                    return
+            except Exception:
+                pass
 
         # Panel-aware horizontal navigation
         panel_name = self._get_panel_name_for_widget(focused_widget)

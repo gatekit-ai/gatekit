@@ -58,6 +58,14 @@ def pytest_collection_modifyitems(config, items):
         if "posix_only" in item.keywords and sys.platform == "win32":
             continue
 
+        # Filter out darwin_only tests on non-macOS platforms
+        if "darwin_only" in item.keywords and sys.platform != "darwin":
+            continue
+
+        # Filter out linux_only tests on non-Linux platforms
+        if "linux_only" in item.keywords and sys.platform != "linux":
+            continue
+
         filtered_items.append(item)
 
     items[:] = filtered_items

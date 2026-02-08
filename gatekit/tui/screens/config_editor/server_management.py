@@ -812,7 +812,23 @@ class ServerManagementMixin(
 
         try:
             new_name = self._generate_new_server_name()
-            new_upstream = UpstreamConfig.create_draft(name=new_name)
+
+            # Default new servers to sandbox enabled when backend is available
+            sandbox_default = None
+            try:
+                from gatekit.sandbox.detection import _detect_backend
+                from gatekit.config.models import SandboxConfig
+
+                backend = _detect_backend()
+                if backend is not None and backend.is_available():
+                    sandbox_default = SandboxConfig(enabled=True)
+            except Exception:
+                pass
+
+            new_upstream = UpstreamConfig.create_draft(
+                name=new_name,
+                sandbox=sandbox_default,
+            )
 
             self.config.upstreams.append(new_upstream)
             self.selected_server = new_name

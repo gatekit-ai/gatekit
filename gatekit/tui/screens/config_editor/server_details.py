@@ -266,6 +266,68 @@ class ServerDetailsMixin:
         )
         info_lines.append(transport_row)
 
+        # Sandbox row (stdio transport only)
+        if upstream.transport == "stdio":
+            from gatekit.tui.widgets.ascii_checkbox import ASCIICheckbox
+
+            sandbox_enabled = (
+                upstream.sandbox is not None and upstream.sandbox.enabled
+            )
+
+            # Check if a sandbox backend is available on this platform
+            sandbox_available = False
+            sandbox_unavailable_reason = ""
+            try:
+                from gatekit.sandbox.detection import _detect_backend
+
+                backend = _detect_backend()
+                if backend is None:
+                    import sys as _sys
+                    sandbox_unavailable_reason = f"Not available on {_sys.platform}"
+                elif not backend.is_available():
+                    sandbox_unavailable_reason = backend.availability_diagnostic()
+                else:
+                    sandbox_available = True
+            except Exception:
+                sandbox_unavailable_reason = "Detection failed"
+
+            sandbox_checkbox = ASCIICheckbox(
+                value=sandbox_enabled,
+                id="sandbox_enabled_checkbox",
+            )
+            sandbox_checkbox.disabled = not sandbox_available
+
+            configure_button = AsyncCallbackButton(
+                "Configure",
+                id="sandbox_configure_button",
+                callback=self._handle_sandbox_configure,
+            )
+            configure_button.add_class("-textual-compact")
+
+            sandbox_row_widgets = [
+                Label("Sandbox:", classes="server-label"),
+                sandbox_checkbox,
+            ]
+            if sandbox_available:
+                sandbox_row_widgets.append(configure_button)
+            else:
+                unavailable_label = SelectableStatic(
+                    "(Not available)",
+                    id="sandbox_unavailable_label",
+                )
+                unavailable_label.styles.width = "auto"
+                unavailable_label.styles.margin = (0, 0, 0, 1)
+                unavailable_label.styles.text_style = "underline"
+                unavailable_label.styles.color = "gray"
+                unavailable_label.tooltip = sandbox_unavailable_reason
+                sandbox_row_widgets.append(unavailable_label)
+
+            sandbox_row = Horizontal(
+                *sandbox_row_widgets,
+                classes="sandbox-row",
+            )
+            info_lines.append(sandbox_row)
+
         # Mount the lines
         for line in info_lines:
             info_container.mount(line)

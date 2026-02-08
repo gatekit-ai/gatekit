@@ -476,7 +476,7 @@ def get_config_schema(cls) -> Dict[str, Any]:
     }
 ```
 
-> **Migration note (v0.2.0):** `get_json_schema()` was renamed to `get_config_schema()`. A deprecated shim is provided for backward compatibility and will be removed in v0.3.0.
+> **Migration note (v0.2.0):** `get_json_schema()` was renamed to `get_config_schema()`. The deprecated shim was removed in v0.3.0.
 
 ### Output Schema for TUI Display
 

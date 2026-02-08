@@ -14,7 +14,10 @@ import subprocess
 import sys
 import threading
 import time
-from typing import List, Optional, Union, Dict
+from typing import List, Optional, Union, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from gatekit.config.models import SandboxConfig
 
 from .base import Transport
 from .errors import (
@@ -51,6 +54,7 @@ class StdioTransport(Transport):
         max_concurrent_requests: int = 100,
         max_line_length: int = 1024 * 1024,
         log_json_content: bool = True,
+        sandbox_config: Optional["SandboxConfig"] = None,
     ):
         """Initialize the stdio transport.
 
@@ -61,9 +65,12 @@ class StdioTransport(Transport):
             max_concurrent_requests: Maximum number of concurrent requests allowed
             max_line_length: Maximum line length in bytes (default 1MB)
             log_json_content: Whether to log full JSON content (may contain sensitive data)
+            sandbox_config: Optional sandbox configuration for OS-native process isolation
         """
         self.command = command
         self.request_timeout = request_timeout
+        self._sandbox_config = sandbox_config
+        self._sandbox_backend = None  # Set during connect() if sandbox is active
         self._process: Optional[asyncio.subprocess.Process] = None
         self._validator = MessageValidator()
 
@@ -138,11 +145,30 @@ class StdioTransport(Transport):
         try:
             # Resolve command for platform compatibility (handles Windows .cmd/.bat)
             resolved_command = self._resolve_command_for_platform(self.command)
+
+            # Apply sandbox wrapping if configured
+            if self._sandbox_config and self._sandbox_config.enabled:
+                from gatekit.sandbox import resolve_and_wrap as _resolve_and_wrap
+                from gatekit.sandbox.errors import SandboxError
+
+                try:
+                    resolved_command, self._sandbox_backend = _resolve_and_wrap(
+                        resolved_command,
+                        enabled=True,
+                        paths=self._sandbox_config.paths,
+                        network=self._sandbox_config.network,
+                    )
+                except SandboxError as e:
+                    raise TransportProcessError(
+                        f"Sandbox setup failed: {e}"
+                    ) from e
+
             logger.info(
                 "Starting MCP server process",
                 extra={
                     "command": self.command,
                     "resolved_command": resolved_command,
+                    "sandboxed": self._sandbox_backend is not None,
                     "operation": "connect",
                 },
             )
@@ -181,6 +207,14 @@ class StdioTransport(Transport):
             logger.debug("Stderr reader started")
 
         except OSError as e:
+            # Clean up sandbox temp files (e.g. Seatbelt profile) since
+            # disconnect() won't run when the process never started.
+            if self._sandbox_backend is not None:
+                try:
+                    self._sandbox_backend.cleanup()
+                except Exception:  # noqa: S110
+                    pass
+                self._sandbox_backend = None
             logger.exception(
                 "Failed to start MCP server process",
                 extra={"error": str(e), "operation": "connect"},
@@ -318,6 +352,14 @@ class StdioTransport(Transport):
                     # Ignore errors during stream cleanup - best effort only
                     pass
             self._process = None
+
+            # Clean up sandbox temp files (e.g. Seatbelt profile)
+            if self._sandbox_backend is not None:
+                try:
+                    self._sandbox_backend.cleanup()
+                except Exception:  # noqa: S110
+                    pass
+                self._sandbox_backend = None
 
     def _terminate_process_tree(self) -> None:
         """Send SIGTERM to the entire process group (POSIX) or process (Windows).
